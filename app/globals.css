@@ -1,0 +1,48 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --primary: #005131;
+  --primary-container: #1a6b45;
+  --surface: #f5fbf7;
+  --on-surface: #171d1b;
+  --on-surface-variant: #3f4942;
+  --surface-container-low: #eff5f1;
+  --surface-container-lowest: #ffffff;
+  --error: #ba1a1a;
+  --tertiary: #762f35;
+  --outline-variant: rgba(191, 201, 191, 0.15);
+}
+
+@layer base {
+  body {
+    @apply font-sans antialiased text-[#171d1b] bg-[#f5fbf7];
+  }
+  
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-[var(--font-jakarta)] tracking-tight text-[#005131];
+  }
+}
+
+.signature-gradient {
+    background: linear-gradient(135deg, #005131 0%, #1a6b45 100%);
+}
+
+.ambient-shadow {
+    box-shadow: 0px 12px 32px rgba(23, 29, 27, 0.06);
+}
+
+.ghost-border {
+    border: 1px solid rgba(191, 201, 191, 0.15);
+}
+
+@keyframes slide-up {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+.animate-slide-up {
+  animation: slide-up 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
