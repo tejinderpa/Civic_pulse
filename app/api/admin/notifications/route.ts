@@ -8,7 +8,6 @@ import {
 } from '@/lib/admin/notifications';
 
 export const dynamic = 'force-dynamic';
-
 /**
  * Admin operations inbox.
  * Built from live reports (notifications table is optional / may not exist).
