@@ -33,13 +33,14 @@ export const TaskForceModal: React.FC<TaskForceModalProps> = ({
 
   if (!isOpen) return null;
 
+  const canCreate = name.trim().length >= 3;
+
   const handleRemoveIssue = (id: string) => {
-    if (issues.length <= 1) return; // Min 1 issue
-    setIssues(prev => prev.filter(i => i.id !== id));
+    setIssues((prev) => prev.filter((i) => i.id !== id));
   };
 
   const handleCreate = async () => {
-    if (name.length < 3 || issues.length === 0) return;
+    if (name.trim().length < 3) return;
 
     setIsCreating(true);
     try {
@@ -47,8 +48,8 @@ export const TaskForceModal: React.FC<TaskForceModalProps> = ({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name,
-          issueIds: issues.map(i => i.id)
+          name: name.trim(),
+          issueIds: issues.map((i) => i.id),
         })
       });
 
@@ -160,22 +161,33 @@ export const TaskForceModal: React.FC<TaskForceModalProps> = ({
                     <label className="text-[10px] font-black uppercase tracking-[0.2em] text-[#0D2D1C]">Issues to be grouped ({issues.length})</label>
                     {preSelectedIssues.length > 0 && issues.length === preSelectedIssues.length && (
                       <span className="px-2 py-0.5 bg-blue-50 text-blue-600 text-[9px] font-black uppercase rounded border border-blue-100">
-                        {preSelectedIssues.some(i => i.ai_score && i.ai_score > 70) ? 'AI Auto-selected' : 'Manually Selected'}
+                        {preSelectedIssues.some(i => (i.ai_score ?? 0) > 0 || i.severity === 'Critical' || i.severity === 'High')
+                          ? 'Priority ranked'
+                          : 'Selected reports'}
                       </span>
                     )}
                   </div>
                   
                   <div className="space-y-3">
-                    {issues.map(issue => (
+                    {issues.length === 0 ? (
+                      <div className="p-6 rounded-2xl border border-dashed border-gray-200 bg-gray-50 text-center">
+                        <p className="text-xs font-bold text-gray-500">
+                          No reports pre-selected. You can still create the task force and assign reports later from Issue Management.
+                        </p>
+                      </div>
+                    ) : (
+                      issues.map(issue => (
                       <div key={issue.id} className="p-3 bg-white border border-gray-100 rounded-2xl flex items-center gap-4 group">
                          <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-[10px] font-black ${issue.severity === 'Critical' ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-600'}`}>
-                            {issue.ai_score || '??'}
+                            {issue.ai_score ?? 0}
                          </div>
                          <div className="flex-1 min-w-0">
                             <h4 className="text-xs font-bold text-[#0D2D1C] truncate">{issue.title}</h4>
-                            <p className="text-[10px] text-gray-400 truncate mt-0.5">{issue.address}</p>
+                            <p className="text-[10px] text-gray-400 truncate mt-0.5">
+                              {issue.address || issue.location || 'Location pending'}
+                            </p>
                          </div>
-                         {!isCreating && issues.length > 1 && (
+                         {!isCreating && (
                            <button 
                              onClick={() => handleRemoveIssue(issue.id)}
                              className="w-8 h-8 rounded-lg text-gray-300 hover:text-red-500 hover:bg-red-50 transition-all flex items-center justify-center opacity-0 group-hover:opacity-100"
@@ -184,7 +196,8 @@ export const TaskForceModal: React.FC<TaskForceModalProps> = ({
                            </button>
                          )}
                       </div>
-                    ))}
+                    ))
+                    )}
                   </div>
                </div>
 
@@ -209,7 +222,7 @@ export const TaskForceModal: React.FC<TaskForceModalProps> = ({
                  </button>
                )}
                <button 
-                 disabled={isCreating || name.length < 3 || issues.length === 0}
+                 disabled={isCreating || !canCreate}
                  onClick={handleCreate}
                  className="flex-[2] py-4 bg-[#0D2D1C] text-white font-black text-sm uppercase tracking-widest rounded-2xl shadow-xl shadow-emerald-900/10 hover:scale-[1.02] transition-all disabled:opacity-30 disabled:hover:scale-100 flex items-center justify-center gap-3"
                >
@@ -219,7 +232,7 @@ export const TaskForceModal: React.FC<TaskForceModalProps> = ({
                      Creating Unit...
                    </>
                  ) : (
-                   'Establish Task Force'
+                   issues.length > 0 ? 'Establish Task Force' : 'Create Task Force'
                  )}
                </button>
             </div>

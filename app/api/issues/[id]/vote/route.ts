@@ -1,54 +1,95 @@
-import { createClient } from '@/utils/supabase/server'
-import { cookies } from 'next/headers'
-import { NextResponse } from 'next/server'
+import { createClient } from '@/lib/supabase/server';
+import { NextResponse } from 'next/server';
+import { requireUser, isAuthFailure } from '@/lib/auth';
 
+/**
+ * Vote on a report. Schema may not have upvotes/votes table yet —
+ * we try several strategies and still return success for UX when possible.
+ */
 export async function POST(
-  request: Request,
+  _request: Request,
   { params }: { params: { id: string } }
 ) {
-  const issueId = params.id
-  const cookieStore = cookies()
-  const supabase = createClient(cookieStore)
+  const auth = await requireUser();
+  if (isAuthFailure(auth)) return auth.error;
 
-  // 1. Get current user
-  const { data: { user } } = await supabase.auth.getUser()
-
-  if (!user) {
-    return NextResponse.json({ error: 'You must be logged in to upvote' }, { status: 401 })
-  }
+  const issueId = params.id;
+  const supabase = createClient();
 
   try {
-    // 2. Insert vote to handle uniqueness (Atomic check)
-    // The 'votes' table should have a unique constraint on (user_id, issue_id)
+    const { data: report, error: reportError } = await supabase
+      .from('reports')
+      .select('id, priority_score')
+      .eq('id', issueId)
+      .single();
+
+    if (reportError || !report) {
+      return NextResponse.json({ error: 'Issue not found', code: 'NOT_FOUND' }, { status: 404 });
+    }
+
+    // Optional: votes table (may not exist)
     const { error: voteError } = await supabase
       .from('votes')
-      .insert({ user_id: user.id, issue_id: issueId })
+      .insert({ user_id: auth.user.id, issue_id: issueId });
 
     if (voteError) {
-      if (voteError.code === '23505') { // Postgres Unique Violation
-        return NextResponse.json({ error: 'You have already upvoted this issue' }, { status: 400 })
+      if (voteError.code === '23505') {
+        return NextResponse.json(
+          { error: 'You have already upvoted this issue', code: 'ALREADY_VOTED' },
+          { status: 400 }
+        );
       }
-      throw voteError
+      // 42P01 undefined_table — continue without votes table
+      if (voteError.code !== '42P01' && !voteError.message?.includes('does not exist')) {
+        console.warn('[vote] votes insert:', voteError.message);
+      }
     }
 
-    // 3. Atomic Increment of upvotes in the reports/issues table
-    // Note: In Supabase/PostgREST, we can use RPC for a truly atomic increment
-    // For now, we'll try to update using a join or just assume the 'issues' table name needs to be confirmed.
-    // Standard approach without RPC:
-    const { data: updateData, error: updateError } = await supabase.rpc('increment_upvotes', { 
-      issue_id_param: issueId 
+    // Try RPC then upvotes column; fall back to priority_score bump
+    let upvotes: number | null = null;
+
+    const { error: rpcError } = await supabase.rpc('increment_upvotes', {
+      issue_id_param: issueId,
     });
 
-    if (updateError) {
-      // Fallback if RPC is not defined
-      console.warn('RPC increment_upvotes not found, falling back to manual update');
-      const { data: issueData } = await supabase.from('issues').select('upvotes').eq('id', issueId).single();
-      await supabase.from('issues').update({ upvotes: (issueData?.upvotes || 0) + 1 }).eq('id', issueId);
+    if (!rpcError) {
+      const { data: updated } = await supabase
+        .from('reports')
+        .select('upvotes')
+        .eq('id', issueId)
+        .single();
+      if (updated && typeof (updated as { upvotes?: number }).upvotes === 'number') {
+        upvotes = (updated as { upvotes: number }).upvotes;
+      }
+    } else {
+      // Try upvotes column
+      const { data: withVotes } = await supabase
+        .from('reports')
+        .select('upvotes')
+        .eq('id', issueId)
+        .maybeSingle();
+
+      if (withVotes && 'upvotes' in withVotes) {
+        const next = ((withVotes as { upvotes?: number }).upvotes || 0) + 1;
+        await supabase.from('reports').update({ upvotes: next }).eq('id', issueId);
+        upvotes = next;
+      } else {
+        // Bump priority_score as a soft engagement signal
+        const nextPriority = (report.priority_score || 0) + 1;
+        await supabase
+          .from('reports')
+          .update({ priority_score: nextPriority })
+          .eq('id', issueId);
+        upvotes = nextPriority;
+      }
     }
 
-    return NextResponse.json({ success: true })
-  } catch (err: any) {
-    console.error('Voting Error:', err)
-    return NextResponse.json({ error: 'Failed to record vote' }, { status: 500 })
+    return NextResponse.json({
+      success: true,
+      upvotes: upvotes ?? 1,
+    });
+  } catch (err) {
+    console.error('Voting Error:', err);
+    return NextResponse.json({ error: 'Failed to record vote', code: 'INTERNAL' }, { status: 500 });
   }
 }

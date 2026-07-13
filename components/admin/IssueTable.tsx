@@ -113,16 +113,19 @@ export const IssueTable: React.FC<IssueTableProps> = ({
                 <td className="p-5">
                    <div className="flex items-center gap-2">
                       <span className="material-symbols-outlined text-sm text-[var(--on-surface-variant)] opacity-40">location_on</span>
-                      <p className="text-xs font-bold text-[var(--on-surface-variant)] line-clamp-1 opacity-70">{issue.address}</p>
+                      <p className="text-xs font-bold text-[var(--on-surface-variant)] line-clamp-1 opacity-70">
+                        {issue.address || issue.location || 'Location pending'}
+                      </p>
                    </div>
                 </td>
                 <td className="p-5 text-center">
                     <div className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-[11px] font-black shadow-sm ${
-                       issue.ai_score && issue.ai_score >= 80 ? 'bg-red-50 text-red-600 border border-red-100' :
-                       issue.ai_score && issue.ai_score >= 50 ? 'bg-amber-50 text-amber-600 border border-amber-100' :
+                       (issue.ai_score ?? 0) >= 80 ? 'bg-red-50 text-red-600 border border-red-100' :
+                       (issue.ai_score ?? 0) >= 50 ? 'bg-amber-50 text-amber-600 border border-amber-100' :
+                       (issue.ai_score ?? 0) >= 10 ? 'bg-amber-50 text-amber-600 border border-amber-100' :
                        'bg-emerald-50 text-emerald-600 border border-emerald-100'
                      }`}>
-                       {issue.ai_score || '00'}
+                       {issue.ai_score ?? 0}
                     </div>
                 </td>
                 <td className="p-5 text-center">
@@ -147,10 +150,13 @@ export const IssueTable: React.FC<IssueTableProps> = ({
                 </td>
                 <td className="p-5 text-right">
                    <button 
+                    type="button"
+                    title="Assign & track progress"
                     onClick={() => onViewDetails(issue)}
-                    className="w-10 h-10 rounded-xl bg-white border border-[var(--outline-variant)] text-[var(--on-surface-variant)] hover:bg-[var(--primary)] hover:text-white hover:border-[var(--primary)] transition-all duration-300 shadow-sm flex items-center justify-center ml-auto"
+                    className="inline-flex items-center gap-1.5 h-10 px-3 rounded-xl bg-white border border-[var(--outline-variant)] text-[var(--on-surface-variant)] hover:bg-[var(--primary)] hover:text-white hover:border-[var(--primary)] transition-all duration-300 shadow-sm ml-auto"
                   >
-                    <span className="material-symbols-outlined text-[20px]">chevron_right</span>
+                    <span className="material-symbols-outlined text-[18px]">edit_note</span>
+                    <span className="text-[11px] font-black uppercase tracking-wide hidden sm:inline">Actions</span>
                   </button>
                 </td>
               </tr>

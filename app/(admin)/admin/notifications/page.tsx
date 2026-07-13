@@ -1,160 +1,493 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { createClient } from '@/utils/supabase/client';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { createClient } from '@/utils/supabase/client';
+import {
+  AdminNotification,
+  AdminNotifFilter,
+  AdminNotifSort,
+  filterAdminNotifications,
+  formatTimeAgo,
+  kindMeta,
+  loadAdminReadIds,
+  saveAdminReadIds,
+  sortAdminNotifications,
+} from '@/lib/admin/notifications';
+import { IssueDetailDrawer } from '@/components/shared/IssueDetailDrawer';
+import { Issue } from '@/types/issue';
+import { normalizeReportRow } from '@/lib/reports/columns';
 
-export default function NotificationsPage() {
-  const [notifications, setNotifications] = useState<any[]>([]);
-  const [filter, setFilter] = useState('All');
-  const [isLoading, setIsLoading] = useState(true);
-  const supabase = createClient();
+const FILTERS: { key: AdminNotifFilter; label: string }[] = [
+  { key: 'all', label: 'All' },
+  { key: 'unread', label: 'Unread' },
+  { key: 'new_report', label: 'New reports' },
+  { key: 'critical', label: 'Critical / High' },
+  { key: 'task_force', label: 'Task forces' },
+  { key: 'unassigned', label: 'Unassigned' },
+  { key: 'rejected', label: 'Rejected' },
+];
+
+const SORTS: { key: AdminNotifSort; label: string }[] = [
+  { key: 'newest', label: 'Newest first' },
+  { key: 'priority', label: 'Priority' },
+  { key: 'location', label: 'Location' },
+  { key: 'task_force', label: 'Task force' },
+  { key: 'status', label: 'Status' },
+];
+
+export default function AdminNotificationsPage() {
   const router = useRouter();
+  const supabase = createClient();
+
+  const [items, setItems] = useState<AdminNotification[]>([]);
+  const [reportsById, setReportsById] = useState<Record<string, Issue>>({});
+  const [stats, setStats] = useState({
+    total: 0,
+    open: 0,
+    critical: 0,
+    unassigned: 0,
+    withTaskForce: 0,
+  });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [filter, setFilter] = useState<AdminNotifFilter>('all');
+  const [sort, setSort] = useState<AdminNotifSort>('newest');
+  const [search, setSearch] = useState('');
+  const [readIds, setReadIds] = useState<Set<string>>(() => loadAdminReadIds());
+
+  const [selectedIssue, setSelectedIssue] = useState<Issue | null>(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+
+  const applyReadState = useCallback(
+    (list: AdminNotification[], ids: Set<string>) =>
+      list.map((n) => ({ ...n, is_read: ids.has(n.id) })),
+    []
+  );
+
+  const load = useCallback(async () => {
+    setError(null);
+    try {
+      // Instant paint from shared reports cache, then refresh API/meta
+      const { ensureReportsSynced } = await import('@/lib/cache/reports-sync');
+      const { reportsCache } = await import('@/lib/cache/reports-cache');
+      const { createClient } = await import('@/utils/supabase/client');
+      const {
+        buildAdminNotifications,
+      } = await import('@/lib/admin/notifications');
+      const supabase = createClient();
+
+      const ids = loadAdminReadIds();
+      setReadIds(ids);
+
+      reportsCache.hydrate();
+      if (reportsCache.size() > 0) {
+        const cached = reportsCache.getAll();
+        const built = applyReadState(
+          buildAdminNotifications(cached, ids, {}),
+          ids
+        );
+        setItems(built);
+        const map: Record<string, Issue> = {};
+        cached.forEach((r) => {
+          map[r.id] = r as unknown as Issue;
+        });
+        setReportsById(map);
+        setStats({
+          total: cached.length,
+          open: cached.filter((r) => {
+            const s = (r.status || '').toLowerCase();
+            return s !== 'resolved' && s !== 'rejected';
+          }).length,
+          critical: cached.filter(
+            (r) => r.severity === 'Critical' || r.severity === 'High'
+          ).length,
+          unassigned: cached.filter((r) => {
+            const s = (r.status || '').toLowerCase();
+            return s !== 'resolved' && s !== 'rejected' && !r.task_force_id;
+          }).length,
+          withTaskForce: cached.filter((r) => !!r.task_force_id).length,
+        });
+        setLoading(false);
+      } else {
+        setLoading(true);
+      }
+
+      await ensureReportsSynced(supabase);
+      const res = await fetch('/api/admin/notifications');
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Failed to load');
+
+      const built = applyReadState(json.items || [], ids);
+      setItems(built);
+      setStats(json.stats || { total: 0, open: 0, critical: 0, unassigned: 0, withTaskForce: 0 });
+
+      const map: Record<string, Issue> = {};
+      (json.reports || []).forEach((r: Record<string, unknown>) => {
+        const n = normalizeReportRow(r) as unknown as Issue;
+        if (n.id) map[n.id] = n;
+      });
+      setReportsById(map);
+    } catch (e) {
+      console.error(e);
+      setError(e instanceof Error ? e.message : 'Failed to load notifications');
+    } finally {
+      setLoading(false);
+    }
+  }, [applyReadState]);
 
   useEffect(() => {
-    async function loadData() {
-      // For development/demo, we load generically. In prod, use user ID.
-      const { data, error } = await supabase
-        .from('notifications')
-        .select('*')
-        .order('created_at', { ascending: false });
-      
-      if (!error && data) setNotifications(data);
-      setIsLoading(false);
-    }
-    
-    loadData();
+    load();
+  }, [load]);
 
-    const channel = supabase.channel(`realtime_notifications_${Math.random()}`)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications' }, (payload) => {
-        setNotifications(prev => [payload.new, ...prev]);
-      })
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'notifications' }, (payload) => {
-        setNotifications(prev => prev.map(n => n.id === payload.new.id ? payload.new : n));
-      })
+  // Live: new citizen reports appear instantly
+  useEffect(() => {
+    const channel = supabase
+      .channel(`admin-ops-inbox-${Math.random()}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'reports' },
+        () => {
+          load();
+        }
+      )
       .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [supabase]);
+  }, [supabase, load]);
 
-  const markAsRead = async (id: string, issueId?: string) => {
-    await supabase.from('notifications').update({ is_read: true }).eq('id', id);
-    setNotifications(prev => prev.map(n => n.id === id ? { ...n, is_read: true } : n));
-    if (issueId) {
-      router.push(`/admin/issues?id=${issueId}`);
+  const visible = useMemo(() => {
+    const filtered = filterAdminNotifications(items, filter, search);
+    return sortAdminNotifications(filtered, sort);
+  }, [items, filter, search, sort]);
+
+  const unreadCount = useMemo(() => items.filter((n) => !n.is_read).length, [items]);
+
+  const persistRead = (next: Set<string>) => {
+    setReadIds(next);
+    saveAdminReadIds(next);
+    setItems((prev) => applyReadState(prev, next));
+  };
+
+  const markRead = (id: string) => {
+    const next = new Set(readIds);
+    next.add(id);
+    persistRead(next);
+  };
+
+  const markAllRead = () => {
+    const next = new Set(readIds);
+    items.forEach((n) => next.add(n.id));
+    persistRead(next);
+  };
+
+  const openNotification = (n: AdminNotification) => {
+    markRead(n.id);
+    const issue = reportsById[n.issue_id];
+    if (issue) {
+      setSelectedIssue(issue);
+      setDrawerOpen(true);
+    } else {
+      router.push(`/admin/issues?id=${n.issue_id}`);
     }
   };
 
-  const markAllAsRead = async () => {
-    await supabase.from('notifications').update({ is_read: true }).neq('is_read', true);
-    setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
-  };
-
-  const filteredNotifications = notifications.filter(n => {
-    if (filter === 'Unread') return !n.is_read;
-    if (filter === 'Critical') return n.type === 'new_issue' && n.title.includes('Critical'); // Mock logic
-    if (filter === 'SLA Breaches') return n.type === 'sla_breach';
-    return true;
-  });
-
-  const getIconForType = (type: string) => {
-    switch (type) {
-      case 'new_issue': return { icon: 'info', color: 'bg-blue-100 text-blue-600' };
-      case 'sla_breach': return { icon: 'warning', color: 'bg-red-100 text-red-600' };
-      case 'status_change': return { icon: 'check_circle', color: 'bg-emerald-100 text-emerald-600' };
-      case 'assignment': return { icon: 'person', color: 'bg-purple-100 text-purple-600' };
-      default: return { icon: 'notifications', color: 'bg-slate-100 text-slate-600' };
-    }
+  const openInIssues = (n: AdminNotification) => {
+    markRead(n.id);
+    router.push(`/admin/issues?id=${n.issue_id}`);
   };
 
   return (
-    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700 max-w-4xl">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
+    <div className="max-w-[1100px] mx-auto space-y-6 animate-in fade-in duration-500 pb-16">
+      {/* Header */}
+      <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
         <div>
-          <div className="flex items-center gap-3 mb-2">
-            <h1 className="text-3xl font-black tracking-tight text-[var(--primary)] font-[var(--font-plus-jakarta)]">Notifications</h1>
-            {notifications.filter(n => !n.is_read).length > 0 && (
-              <span className="px-2 py-1 bg-red-100 text-red-600 rounded-lg text-xs font-black">
-                {notifications.filter(n => !n.is_read).length} New
+          <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400 mb-1">
+            Operations inbox
+          </p>
+          <div className="flex items-center gap-3 flex-wrap">
+            <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-[#0D2D1C] font-[var(--font-plus-jakarta)]">
+              Notifications
+            </h1>
+            {unreadCount > 0 && (
+              <span className="px-2.5 py-1 rounded-lg bg-red-100 text-red-700 text-xs font-black">
+                {unreadCount} unread
               </span>
             )}
           </div>
-          <p className="text-[var(--on-surface-variant)] font-medium max-w-lg">System alerts, assignment pings, and SLA breach warnings.</p>
+          <p className="text-sm font-medium text-slate-500 mt-1 max-w-xl">
+            New citizen reports land here first. Open a card to assign a task force, update status,
+            or jump to issue management.
+          </p>
         </div>
-        <button 
-          onClick={markAllAsRead}
-          className="px-6 py-2 rounded-xl bg-white border border-[var(--outline-variant)] text-sm font-bold shadow-sm hover:bg-slate-50 transition-all text-slate-600"
-        >
-          Mark all as read
-        </button>
-      </div>
-
-      {/* Tabs */}
-      <div className="flex gap-2 border-b border-slate-200 pb-2 overflow-x-auto">
-        {['All', 'Unread', 'Critical', 'SLA Breaches'].map(tab => (
+        <div className="flex flex-wrap gap-2">
           <button
-            key={tab}
-            onClick={() => setFilter(tab)}
-            className={`px-4 py-2 text-sm font-bold transition-all whitespace-nowrap border-b-2 rounded-t-lg ${
-              filter === tab ? 'border-[var(--primary)] text-[var(--primary)] bg-[var(--primary)]/5' : 'border-transparent text-slate-400 hover:text-slate-600 hover:bg-slate-50'
-            }`}
+            type="button"
+            onClick={load}
+            className="h-10 px-4 rounded-xl bg-white border border-slate-200 text-sm font-bold text-slate-600 hover:bg-slate-50 inline-flex items-center gap-2"
           >
-            {tab}
+            <span className={`material-symbols-outlined text-[18px] ${loading ? 'animate-spin' : ''}`}>
+              refresh
+            </span>
+            Refresh
           </button>
+          <button
+            type="button"
+            onClick={markAllRead}
+            disabled={unreadCount === 0}
+            className="h-10 px-4 rounded-xl bg-white border border-slate-200 text-sm font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+          >
+            Mark all read
+          </button>
+        </div>
+      </header>
+
+      {/* Stats */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        {[
+          { label: 'In feed', value: stats.total, icon: 'inbox', tone: 'text-slate-700' },
+          { label: 'Open', value: stats.open, icon: 'pending_actions', tone: 'text-amber-700' },
+          { label: 'Critical / High', value: stats.critical, icon: 'warning', tone: 'text-red-700' },
+          {
+            label: 'Unassigned',
+            value: stats.unassigned,
+            icon: 'person_off',
+            tone: 'text-indigo-700',
+          },
+        ].map((s) => (
+          <div
+            key={s.label}
+            className="rounded-2xl border border-slate-200 bg-white p-4 flex items-center gap-3"
+          >
+            <div className="h-10 w-10 rounded-xl bg-slate-50 flex items-center justify-center">
+              <span className={`material-symbols-outlined ${s.tone}`}>{s.icon}</span>
+            </div>
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+                {s.label}
+              </p>
+              <p className="text-xl font-black tabular-nums text-slate-900">{s.value}</p>
+            </div>
+          </div>
         ))}
       </div>
 
-      {/* List */}
-      <div className="space-y-3">
-        {isLoading ? (
-          <div className="flex justify-center p-12">
-            <div className="w-8 h-8 rounded-full border-4 border-slate-100 border-t-[var(--primary)] animate-spin"></div>
+      {/* Toolbar */}
+      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+        <div className="p-3 sm:p-4 border-b border-slate-100 flex flex-col sm:flex-row gap-2.5">
+          <div className="relative flex-1 min-w-0">
+            <span className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-[20px]">
+              search
+            </span>
+            <input
+              type="search"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search title, location, task force, category…"
+              className="w-full h-11 pl-11 pr-4 rounded-xl bg-slate-50 border border-transparent text-sm font-medium focus:bg-white focus:border-primary/30 focus:ring-4 focus:ring-primary/10 outline-none"
+            />
           </div>
-        ) : filteredNotifications.length === 0 ? (
-          <div className="p-16 text-center border border-dashed border-slate-300 rounded-3xl bg-slate-50 opacity-60">
-             <span className="material-symbols-outlined text-[48px] text-slate-400 mb-2">notifications_paused</span>
-             <p className="font-bold text-slate-500 uppercase tracking-widest text-sm">No notifications found.</p>
+          <div className="flex items-center gap-2">
+            <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 shrink-0">
+              Sort
+            </label>
+            <select
+              value={sort}
+              onChange={(e) => setSort(e.target.value as AdminNotifSort)}
+              className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-primary/20"
+            >
+              {SORTS.map((s) => (
+                <option key={s.key} value={s.key}>
+                  {s.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <div className="px-3 sm:px-4 py-2.5 flex gap-1.5 overflow-x-auto">
+          {FILTERS.map((f) => (
+            <button
+              key={f.key}
+              type="button"
+              onClick={() => setFilter(f.key)}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all ${
+                filter === f.key
+                  ? 'bg-[#0D2D1C] text-white shadow-sm'
+                  : 'bg-slate-50 text-slate-500 hover:bg-slate-100'
+              }`}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {error && (
+        <div className="rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
+          {error}
+        </div>
+      )}
+
+      {/* List */}
+      <div className="space-y-2.5">
+        {loading ? (
+          <div className="space-y-2">
+            {[1, 2, 3, 4].map((i) => (
+              <div key={i} className="h-24 rounded-2xl bg-slate-100 animate-pulse" />
+            ))}
+          </div>
+        ) : visible.length === 0 ? (
+          <div className="rounded-3xl border border-dashed border-slate-200 bg-slate-50 py-16 text-center">
+            <span className="material-symbols-outlined text-4xl text-slate-300 mb-2">
+              notifications_paused
+            </span>
+            <p className="font-bold text-slate-500">No notifications match this view</p>
+            <p className="text-sm text-slate-400 mt-1">
+              New citizen submissions will appear here automatically.
+            </p>
           </div>
         ) : (
-          filteredNotifications.map(notification => {
-            const { icon, color } = getIconForType(notification.type);
-            const timeAgo = (new Date().getTime() - new Date(notification.created_at).getTime()) / (1000 * 3600); // Simple hours ago calc
-            
+          visible.map((n) => {
+            const meta = kindMeta(n.kind);
             return (
-              <div 
-                key={notification.id}
-                onClick={() => markAsRead(notification.id, notification.issue_id)}
-                className={`group flex items-start gap-4 p-4 rounded-2xl border transition-all cursor-pointer ${
-                  !notification.is_read 
-                  ? 'bg-blue-50/30 border-blue-200/50 hover:bg-blue-50/50 shadow-sm' 
-                  : 'bg-white border-slate-200 hover:shadow-md'
+              <article
+                key={n.id}
+                className={`group rounded-2xl border transition-all ${
+                  !n.is_read
+                    ? 'bg-blue-50/40 border-blue-200/60 shadow-sm'
+                    : 'bg-white border-slate-200 hover:border-slate-300 hover:shadow-sm'
                 }`}
               >
-                {!notification.is_read && (
-                  <div className="w-1.5 h-10 mt-1 rounded-full bg-blue-500 shrink-0"></div>
-                )}
-                
-                <div className={`w-12 h-12 rounded-xl shrink-0 flex items-center justify-center ${color}`}>
-                  <span className="material-symbols-outlined">{icon}</span>
-                </div>
+                <div className="flex flex-col sm:flex-row sm:items-stretch gap-0">
+                  <button
+                    type="button"
+                    onClick={() => openNotification(n)}
+                    className="flex-1 flex items-start gap-3 sm:gap-4 p-4 text-left min-w-0"
+                  >
+                    <div className="flex items-start gap-2 shrink-0">
+                      {!n.is_read && (
+                        <span className="mt-3 h-2 w-2 rounded-full bg-blue-500 shrink-0" />
+                      )}
+                      <div
+                        className={`h-11 w-11 rounded-xl flex items-center justify-center ${meta.color}`}
+                      >
+                        <span className="material-symbols-outlined text-[22px]">{meta.icon}</span>
+                      </div>
+                    </div>
 
-                <div className="flex-1 min-w-0 pt-1 border-r border-slate-100 pr-4">
-                  <h4 className={`text-sm truncate ${!notification.is_read ? 'font-black text-[#0D2D1C]' : 'font-bold text-slate-600'}`}>
-                    {notification.title}
-                  </h4>
-                  <p className="text-xs text-slate-500 mt-1 truncate">{notification.message}</p>
-                </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2 mb-1">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+                          {meta.label}
+                        </span>
+                        <span
+                          className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-md border ${
+                            n.severity === 'Critical'
+                              ? 'bg-red-50 text-red-700 border-red-100'
+                              : n.severity === 'High'
+                                ? 'bg-orange-50 text-orange-700 border-orange-100'
+                                : 'bg-slate-50 text-slate-600 border-slate-100'
+                          }`}
+                        >
+                          {n.severity}
+                        </span>
+                        <span className="text-[10px] font-bold text-slate-400">
+                          {formatTimeAgo(n.created_at)}
+                        </span>
+                      </div>
+                      <h3
+                        className={`text-sm sm:text-base truncate ${
+                          !n.is_read ? 'font-black text-[#0D2D1C]' : 'font-bold text-slate-700'
+                        }`}
+                      >
+                        {n.title}
+                      </h3>
+                      <p className="text-xs sm:text-sm text-slate-500 mt-0.5 line-clamp-2">
+                        {n.message}
+                      </p>
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-500 bg-slate-100/80 px-2 py-0.5 rounded-md">
+                          <span className="material-symbols-outlined text-[12px]">category</span>
+                          {n.category}
+                        </span>
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-500 bg-slate-100/80 px-2 py-0.5 rounded-md max-w-[200px] truncate">
+                          <span className="material-symbols-outlined text-[12px]">location_on</span>
+                          {n.short_location}
+                        </span>
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-500 bg-slate-100/80 px-2 py-0.5 rounded-md">
+                          {n.status}
+                        </span>
+                        {n.task_force_name && (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-md">
+                            <span className="material-symbols-outlined text-[12px]">groups</span>
+                            {n.task_force_name}
+                          </span>
+                        )}
+                      </div>
+                    </div>
 
-                <div className="w-24 shrink-0 text-right pt-1">
-                   <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{Math.floor(timeAgo) === 0 ? 'Just now' : `${Math.floor(timeAgo)}h ago`}</p>
+                    {n.image_url && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={n.image_url}
+                        alt=""
+                        className="hidden sm:block h-14 w-14 rounded-xl object-cover border border-slate-100 shrink-0"
+                      />
+                    )}
+                  </button>
+
+                  <div className="flex sm:flex-col border-t sm:border-t-0 sm:border-l border-slate-100 p-2 sm:p-3 gap-1.5 sm:justify-center shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => openNotification(n)}
+                      className="flex-1 sm:flex-none h-9 px-3 rounded-xl bg-[#0D2D1C] text-white text-[11px] font-black uppercase tracking-wide hover:opacity-90 inline-flex items-center justify-center gap-1"
+                    >
+                      Open
+                      <span className="material-symbols-outlined text-[14px]">chevron_right</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => openInIssues(n)}
+                      className="flex-1 sm:flex-none h-9 px-3 rounded-xl bg-white border border-slate-200 text-[11px] font-bold text-slate-600 hover:bg-slate-50 inline-flex items-center justify-center gap-1"
+                    >
+                      Issues
+                    </button>
+                    {!n.is_read && (
+                      <button
+                        type="button"
+                        onClick={() => markRead(n.id)}
+                        className="flex-1 sm:flex-none h-9 px-3 rounded-xl text-[11px] font-bold text-slate-400 hover:text-slate-600 hover:bg-slate-50"
+                      >
+                        Read
+                      </button>
+                    )}
+                  </div>
                 </div>
-              </div>
+              </article>
             );
           })
         )}
       </div>
+
+      <p className="text-center text-[11px] text-slate-400 font-medium">
+        Showing {visible.length} of {items.length} · Live updates when citizens submit reports
+      </p>
+
+      <IssueDetailDrawer
+        issue={selectedIssue}
+        isOpen={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        onUpdate={() => {
+          load();
+        }}
+        onCreateTaskForce={(issue) => {
+          setDrawerOpen(false);
+          router.push(`/admin/issues?id=${issue.id}`);
+        }}
+      />
     </div>
   );
 }

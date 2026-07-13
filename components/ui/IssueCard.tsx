@@ -3,96 +3,144 @@
 import React from 'react';
 import { Badge } from './Badge';
 import { StatusPill } from './StatusPill';
-import Link from 'next/link';
 import Image from 'next/image';
-
+import Link from 'next/link';
 
 export type IssueCardProps = {
   id: string;
-  category: 'Road' | 'Garbage' | 'Water' | 'Electricity' | 'Other';
-  status: 'Pending' | 'In Progress' | 'Resolved';
-  title: string;
-  location: string;
-  upvotes: number;
-  imageUrl: string;
-  timeAgo: string;
-  severity?: 'low' | 'medium' | 'high' | 'critical';
+  category?: string;
+  status?: string;
+  title?: string;
+  description?: string;
+  location?: string | null;
+  address?: string | null;
+  upvotes?: number | null;
+  votes_count?: number | null;
+  imageUrl?: string | null;
+  image_url?: string | null;
+  timeAgo?: string;
+  created_at?: string;
+  severity?: string;
   duplicate_of?: string | null;
   onVote?: (id: string) => void;
+  href?: string;
 };
 
-export const IssueCard: React.FC<IssueCardProps> = ({ 
-  id, 
-  category, 
-  status, 
-  title, 
-  location, 
-  upvotes, 
-  imageUrl, 
-  timeAgo,
-  severity = 'medium',
-  duplicate_of,
-  onVote
-}) => {
-  const categoryVariants: Record<string, 'primary' | 'secondary' | 'error' | 'success' | 'warning' | 'neutral' | 'critical'> = {
+const categoryVariant = (category: string) => {
+  const map: Record<string, 'primary' | 'secondary' | 'error' | 'success' | 'warning' | 'neutral'> = {
     Road: 'warning',
     Garbage: 'success',
     Water: 'primary',
     Electricity: 'secondary',
-    Other: 'neutral'
+    Environment: 'success',
+    Other: 'neutral',
   };
+  return map[category] || 'neutral';
+};
 
-  return (
-    <div className="group bg-white rounded-[16px] shadow-[0_2px_12px_rgba(0,0,0,0.07)] overflow-hidden flex flex-col transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_8px_24px_rgba(0,0,0,0.12)] border border-[#E2E8E4] w-full max-w-[400px]">
-      <div className="relative h-[180px] w-full overflow-hidden">
-        <Image 
-          src={imageUrl} 
-          alt={title} 
-          fill
-          className="object-cover transition-transform duration-500 group-hover:scale-110"
-        />
+export const IssueCard: React.FC<IssueCardProps> = ({
+  id,
+  category = 'Other',
+  status = 'Submitted',
+  title,
+  description,
+  location,
+  address,
+  upvotes,
+  votes_count,
+  imageUrl,
+  image_url,
+  timeAgo,
+  created_at,
+  duplicate_of,
+  onVote,
+  href,
+}) => {
+  const displayTitle = title || description || 'Untitled report';
+  const displayLocation = location || address || 'Unknown area';
+  const displayVotes = upvotes ?? votes_count ?? 0;
+  const displayImage = imageUrl || image_url;
+  const displayTime =
+    timeAgo || (created_at ? new Date(created_at).toLocaleDateString() : '');
 
+  const body = (
+    <div className="group dash-card-hover overflow-hidden flex flex-col w-full h-full !p-0">
+      <div className="relative h-[168px] w-full overflow-hidden bg-surface-container-low">
+        {displayImage ? (
+          <Image
+            src={displayImage}
+            alt={displayTitle}
+            fill
+            className="object-cover transition-transform duration-500 group-hover:scale-[1.03]"
+            sizes="(max-width: 768px) 100vw, 400px"
+          />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center text-outline/25">
+            <span className="material-symbols-outlined text-5xl">image</span>
+          </div>
+        )}
         <div className="absolute top-3 left-3">
-          <Badge variant={categoryVariants[category] || 'neutral'}>{category}</Badge>
+          <Badge variant={categoryVariant(category)}>{category}</Badge>
+        </div>
+        <div className="absolute top-3 right-3">
+          <StatusPill status={status} />
         </div>
       </div>
 
       <div className="p-5 flex flex-col flex-1">
-        <h3 className="font-display font-bold text-gray-900 text-lg leading-tight line-clamp-2 min-h-[3.5rem] mb-2">
-          {title}
+        <h3 className="font-headline font-bold text-on-surface text-[15px] leading-snug line-clamp-2 min-h-[2.6rem] mb-2">
+          {displayTitle}
         </h3>
-        
+
         {duplicate_of && (
-          <span className="text-[11px] font-bold text-gray-400 uppercase tracking-tighter mb-3 block">
+          <span className="text-[10px] font-bold text-outline uppercase tracking-wider mb-2 block">
             Merged from multiple reports
           </span>
         )}
 
-        <div className="flex flex-col gap-2 mb-4 mt-2">
-          <p className="flex items-center text-gray-500 text-sm font-medium">
-            <span className="mr-1.5 text-lg">📍</span> {location}
-          </p>
-          <p className="text-gray-400 text-xs font-medium uppercase tracking-wider">
-            {timeAgo}
-          </p>
-        </div>
+        <p className="text-xs text-on-surface-variant flex items-start gap-1 mb-4 line-clamp-1">
+          <span className="material-symbols-outlined text-[14px] shrink-0 mt-0.5 text-primary/70">
+            location_on
+          </span>
+          <span className="truncate">{displayLocation}</span>
+        </p>
 
-        <div className="mt-auto pt-4 border-t border-gray-50 flex items-center justify-between">
-          <StatusPill status={status} />
-          
-          <button 
-            onClick={(e) => {
-              e.preventDefault();
-              onVote && onVote(id);
-            }}
-            className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#E8F5EE] text-[#1A6B45] font-bold text-sm transition-colors hover:bg-[#1A6B45] hover:text-white"
-          >
-            <span className="text-base">👍</span>
-            <span>{upvotes}</span>
-          </button>
+        <div className="mt-auto flex items-center justify-between gap-2 pt-3 border-t border-[var(--outline-variant)]">
+          <span className="text-[11px] font-medium text-on-surface-variant">{displayTime}</span>
+          <div className="flex items-center gap-2">
+            {onVote && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onVote(id);
+                }}
+                className="inline-flex items-center gap-1 rounded-lg bg-surface-container-low px-2.5 py-1.5 text-xs font-bold text-on-surface hover:bg-primary/10 hover:text-primary transition-colors"
+              >
+                <span className="material-symbols-outlined text-[16px]">thumb_up</span>
+                {displayVotes}
+              </button>
+            )}
+            {!onVote && (
+              <span className="inline-flex items-center gap-1 text-xs font-bold text-on-surface-variant">
+                <span className="material-symbols-outlined text-[16px]">thumb_up</span>
+                {displayVotes}
+              </span>
+            )}
+          </div>
         </div>
       </div>
     </div>
   );
-};
 
+  if (href) {
+    return (
+      <Link href={href} className="block h-full focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 rounded-2xl">
+        {body}
+      </Link>
+    );
+  }
+
+  return body;
+};

@@ -1,31 +1,41 @@
-import React from 'react';
+'use client';
 
-type Category = 'All' | 'Road' | 'Garbage' | 'Water' | 'Electricity' | 'Other';
-type Status = 'All' | 'Pending' | 'In Progress' | 'Resolved';
-type Sort = 'Most Voted' | 'Most Recent' | 'Critical First';
+import React from 'react';
+import type {
+  CommunityCategory,
+  CommunityStatus,
+  CommunitySort,
+} from '@/lib/community/filters';
 
 interface FilterSidebarProps {
-  category: Category;
-  setCategory: (c: Category) => void;
-  status: Status;
-  setStatus: (s: Status) => void;
-  sort: Sort;
-  setSort: (s: Sort) => void;
+  category: CommunityCategory;
+  setCategory: (c: CommunityCategory) => void;
+  status: CommunityStatus;
+  setStatus: (s: CommunityStatus) => void;
+  sort: CommunitySort;
+  setSort: (s: CommunitySort) => void;
   searchQuery: string;
   setSearchQuery: (q: string) => void;
 }
 
-const CATEGORIES: { label: Category; color: string }[] = [
-  { label: 'All', color: '#1A6B45' },
+const CATEGORIES: { label: CommunityCategory; color: string }[] = [
+  { label: 'All', color: '#0f6b45' },
   { label: 'Road', color: '#F97316' },
   { label: 'Garbage', color: '#22C55E' },
   { label: 'Water', color: '#3B82F6' },
   { label: 'Electricity', color: '#EAB308' },
+  { label: 'Environment', color: '#14B8A6' },
   { label: 'Other', color: '#6B7280' },
 ];
 
-const STATUSES: Status[] = ['All', 'Pending', 'In Progress', 'Resolved'];
-const SORTS: Sort[] = ['Most Voted', 'Most Recent', 'Critical First'];
+const STATUSES: { value: CommunityStatus; hint: string }[] = [
+  { value: 'All', hint: 'Any status' },
+  { value: 'Pending', hint: 'Submitted & under review' },
+  { value: 'In Progress', hint: 'Being worked on' },
+  { value: 'Resolved', hint: 'Closed / fixed' },
+];
+
+const SORTS: CommunitySort[] = ['Most Recent', 'Most Voted', 'Critical First'];
 
 export const FilterSidebar: React.FC<FilterSidebarProps> = ({
   category,
@@ -38,72 +48,105 @@ export const FilterSidebar: React.FC<FilterSidebarProps> = ({
   setSearchQuery,
 }) => {
   return (
-    <aside className="space-y-8 sticky top-24">
+    <aside className="space-y-7 sticky top-24">
       <div>
-        <h2 className="text-2xl font-display font-extrabold text-[#1A6B45] mb-4">Community Issues</h2>
+        <h2 className="text-xl font-headline font-bold text-on-surface mb-3">Community issues</h2>
         <div className="relative">
           <input
-            type="text"
-            placeholder="Search issues..."
+            type="search"
+            placeholder="Search title, place, category…"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full px-4 py-3 pl-11 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1A6B45]/20 focus:border-[#1A6B45] transition-all"
+            className="dash-input w-full !pl-10"
           />
-          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 text-lg">🔍</span>
+          <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline text-[18px]">
+            search
+          </span>
         </div>
       </div>
 
       <div>
-        <h3 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-4">Categories</h3>
+        <h3 className="dash-label mb-3">Categories</h3>
         <div className="flex flex-wrap gap-2">
-          {CATEGORIES.map((cat) => (
-            <button
-              key={cat.label}
-              onClick={() => setCategory(cat.label)}
-              style={category === cat.label ? { backgroundColor: cat.color, color: 'white' } : {}}
-              className={`px-4 py-2 rounded-full text-sm font-bold transition-all duration-200 border border-gray-100 ${
-                category === cat.label 
-                  ? 'shadow-lg shadow-black/5' 
-                  : 'bg-white text-gray-600 hover:border-[#1A6B45] hover:text-[#1A6B45]'
-              }`}
-            >
-              {cat.label}
-            </button>
-          ))}
+          {CATEGORIES.map((cat) => {
+            const active = category === cat.label;
+            return (
+              <button
+                key={cat.label}
+                type="button"
+                onClick={() => setCategory(cat.label)}
+                style={active ? { backgroundColor: cat.color, color: 'white', borderColor: cat.color } : {}}
+                className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-all border ${
+                  active
+                    ? 'shadow-md'
+                    : 'bg-white text-on-surface-variant border-[var(--outline-variant)] hover:border-primary/40 hover:text-primary'
+                }`}
+              >
+                {cat.label}
+              </button>
+            );
+          })}
         </div>
       </div>
 
       <div>
-        <h3 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-4">Status</h3>
+        <h3 className="dash-label mb-3">Status</h3>
         <div className="flex flex-wrap gap-2">
-          {STATUSES.map((stat) => (
-            <button
-              key={stat}
-              onClick={() => setStatus(stat)}
-              className={`px-4 py-2 rounded-full text-sm font-bold transition-all duration-200 border ${
-                status === stat
-                  ? 'bg-[#1A6B45] text-white border-[#1A6B45] shadow-lg shadow-[#1A6B45]/10'
-                  : 'bg-white text-gray-600 border-gray-100 hover:border-[#1A6B45] hover:text-[#1A6B45]'
-              }`}
-            >
-              {stat}
-            </button>
-          ))}
+          {STATUSES.map((stat) => {
+            const active = status === stat.value;
+            return (
+              <button
+                key={stat.value}
+                type="button"
+                title={stat.hint}
+                onClick={() => setStatus(stat.value)}
+                className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-all border ${
+                  active
+                    ? 'bg-primary text-white border-primary shadow-md shadow-primary/15'
+                    : 'bg-white text-on-surface-variant border-[var(--outline-variant)] hover:border-primary/40 hover:text-primary'
+                }`}
+              >
+                {stat.value}
+              </button>
+            );
+          })}
         </div>
+        {status === 'Pending' && (
+          <p className="mt-2 text-[11px] text-on-surface-variant">
+            Includes Submitted & Under Review
+          </p>
+        )}
       </div>
 
       <div>
-        <h3 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-4">Sort By</h3>
+        <h3 className="dash-label mb-3">Sort by</h3>
         <select
           value={sort}
-          onChange={(e) => setSort(e.target.value as Sort)}
-          className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1A6B45]/20 focus:border-[#1A6B45] bg-white font-medium text-gray-700"
+          onChange={(e) => setSort(e.target.value as CommunitySort)}
+          className="dash-input w-full font-medium"
         >
           {SORTS.map((s) => (
-            <option key={s} value={s}>{s}</option>
+            <option key={s} value={s}>
+              {s}
+            </option>
           ))}
         </select>
       </div>
+
+      {(category !== 'All' || status !== 'All' || searchQuery.trim() || sort !== 'Most Recent') && (
+        <button
+          type="button"
+          onClick={() => {
+            setCategory('All');
+            setStatus('All');
+            setSort('Most Recent');
+            setSearchQuery('');
+          }}
+          className="dash-btn-secondary w-full !text-xs"
+        >
+          Reset filters
+        </button>
+      )}
     </aside>
   );
 };

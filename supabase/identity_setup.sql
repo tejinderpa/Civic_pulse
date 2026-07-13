@@ -77,6 +77,10 @@ CREATE POLICY "Citizens update own reports" ON public.reports
   FOR UPDATE USING (auth.uid() = user_id)
   WITH CHECK (auth.uid() = user_id);
 
+-- Citizens can delete their own reports
+CREATE POLICY "Citizens delete own reports" ON public.reports
+  FOR DELETE USING (auth.uid() = user_id);
+
 -- Admins have full access to all reports
 CREATE POLICY "Admins full access to reports" ON public.reports
   FOR ALL USING (

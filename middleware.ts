@@ -1,96 +1,142 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
+import { isAdminRole } from '@/lib/auth/roles'
+import { getSupabaseAnonKey, getSupabaseUrl } from '@/lib/supabase/env'
+
+/** Citizen app routes (require login). */
+const CITIZEN_APP = ['/my-reports', '/feed', '/report', '/profile', '/notifications'] as const
+
+/** Admin auth pages (public). */
+const ADMIN_AUTH = ['/admin-login', '/admin-signup', '/admin-auth-callback'] as const
+
+function isCitizenAppPath(path: string) {
+  return CITIZEN_APP.some((p) => path === p || path.startsWith(`${p}/`))
+}
+
+function isAdminAuthPath(path: string) {
+  return ADMIN_AUTH.some((p) => path === p || path.startsWith(`${p}/`))
+}
+
+/** Authority console: /admin and /admin/* except auth pages. */
+function isAdminAppPath(path: string) {
+  if (!path.startsWith('/admin')) return false
+  return !isAdminAuthPath(path)
+}
 
 export async function middleware(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request })
 
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return request.cookies.getAll()
-        },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
-          supabaseResponse = NextResponse.next({ request })
-          cookiesToSet.forEach(({ name, value, options }) =>
-            supabaseResponse.cookies.set(name, value, options)
-          )
-        },
-      },
-    }
-  )
+  const url = getSupabaseUrl()
+  const anonKey = getSupabaseAnonKey()
 
-  const { data: { user } } = await supabase.auth.getUser()
+  if (!url || !anonKey) {
+    console.error('[middleware] Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY')
+    return supabaseResponse
+  }
+
+  const supabase = createServerClient(url, anonKey, {
+    cookies: {
+      getAll() {
+        return request.cookies.getAll()
+      },
+      setAll(cookiesToSet) {
+        cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
+        supabaseResponse = NextResponse.next({ request })
+        cookiesToSet.forEach(({ name, value, options }) =>
+          supabaseResponse.cookies.set(name, value, options)
+        )
+      },
+    },
+  })
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
   const path = request.nextUrl.pathname
 
-  // ── Citizen protected routes ──────────────────────────────
-  const citizenProtected = ['/my-reports', '/feed', '/report', '/profile', '/notifications']
-  if (!user && citizenProtected.some(p => path.startsWith(p))) {
-    const url = request.nextUrl.clone()
-    url.pathname = '/login'
-    url.searchParams.set('redirect', path)
-    return NextResponse.redirect(url)
+  // OAuth / auth callbacks — never block
+  if (path.startsWith('/auth/callback') || path.startsWith('/api/auth/callback')) {
+    return supabaseResponse
   }
 
-  // ── Admin protected routes ────────────────────────────────
-  const adminPublicPaths = ['/admin-login', '/admin-signup', '/admin-auth-callback']
-  const isAdminProtected = path.startsWith('/admin') && !adminPublicPaths.some(p => path.startsWith(p))
+  if (process.env.NODE_ENV === 'production') {
+    if (path.startsWith('/test-supabase') || path.startsWith('/api/debug')) {
+      return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    }
+  }
 
-  if (isAdminProtected) {
+  // ── Citizen app: must be logged in ────────────────────────
+  if (isCitizenAppPath(path) && !user) {
+    const redirectUrl = request.nextUrl.clone()
+    redirectUrl.pathname = '/login'
+    redirectUrl.searchParams.set('redirect', path)
+    return NextResponse.redirect(redirectUrl)
+  }
+
+  // ── Authority console: login + admin role ─────────────────
+  if (isAdminAppPath(path)) {
     if (!user) {
-      const url = request.nextUrl.clone()
-      url.pathname = '/admin-login'
-      url.searchParams.set('redirect', path)
-      return NextResponse.redirect(url)
+      const redirectUrl = request.nextUrl.clone()
+      redirectUrl.pathname = '/admin-login'
+      redirectUrl.searchParams.set('redirect', path)
+      return NextResponse.redirect(redirectUrl)
     }
 
-    // Check role from profiles table OR from user_metadata
-    const metaRole = user.user_metadata?.role;
-
-    const { data: profile, error } = await supabase
-      .from('profiles')
-      .select('role')
-      .eq('id', user.id)
-      .single()
-
-    const isDatabaseAdmin = profile && ['admin', 'authority_staff'].includes(profile.role);
-    const isMetaAdmin = ['admin', 'authority_staff'].includes(metaRole);
-
-    if (!isDatabaseAdmin && !isMetaAdmin) {
-      console.error('[middleware] User not admin in DB or Meta.', { profile, metaRole, error });
-      const url = request.nextUrl.clone()
-      url.pathname = '/admin-login'
-      url.searchParams.set('error', 'not-authorized')
-      return NextResponse.redirect(url)
-    }
-  }
-
-  // ── Redirect logged-in users away from citizen auth pages ─
-  if (user && (path === '/login' || path === '/signup')) {
-    const url = request.nextUrl.clone()
-    url.pathname = '/feed'
-    return NextResponse.redirect(url)
-  }
-
-  // ── Redirect logged-in admins away from admin auth pages ──
-  if (user && (path === '/admin-login' || path === '/admin-signup')) {
+    // profiles table may not exist — soft-fail means not authorized
+    let role: string | null = null
     try {
       const { data: profile } = await supabase
         .from('profiles')
         .select('role')
         .eq('id', user.id)
-        .single()
+        .maybeSingle()
+      role = profile?.role ?? null
+    } catch {
+      role = null
+    }
 
-      if (profile && ['admin', 'authority_staff'].includes(profile.role)) {
-        const url = request.nextUrl.clone()
-        url.pathname = '/admin'
-        return NextResponse.redirect(url)
+    if (!isAdminRole(role)) {
+      // Citizens who wander into /admin land on citizen feed with a hint
+      const redirectUrl = request.nextUrl.clone()
+      redirectUrl.pathname = '/feed'
+      redirectUrl.searchParams.set('notice', 'admin-only')
+      return NextResponse.redirect(redirectUrl)
+    }
+  }
+
+  // ── Citizen auth pages: bounce if already signed in ───────
+  if (user && (path === '/login' || path === '/signup')) {
+    const redirect = request.nextUrl.searchParams.get('redirect')
+    const redirectUrl = request.nextUrl.clone()
+    // Never send citizens into /admin via login redirect
+    const safe =
+      redirect &&
+      redirect.startsWith('/') &&
+      !redirect.startsWith('//') &&
+      !redirect.startsWith('/admin')
+        ? redirect
+        : '/feed'
+    redirectUrl.pathname = safe
+    redirectUrl.search = ''
+    return NextResponse.redirect(redirectUrl)
+  }
+
+  // ── Admin auth pages: bounce admins to console ────────────
+  if (user && isAdminAuthPath(path) && path !== '/admin-auth-callback') {
+    try {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .maybeSingle()
+
+      if (isAdminRole(profile?.role)) {
+        const redirectUrl = request.nextUrl.clone()
+        redirectUrl.pathname = '/admin'
+        return NextResponse.redirect(redirectUrl)
       }
     } catch {
-      // ignore — profiles table may not exist yet
+      // ignore — stay on admin login
     }
   }
 

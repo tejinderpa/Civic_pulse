@@ -2,39 +2,288 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ── B2B dashboard design system (premium green canvas) ── */
 :root {
-  --primary: #005131;
-  --primary-container: #1a6b45;
-  --surface: #f5fbf7;
-  --on-surface: #171d1b;
-  --on-surface-variant: #3f4942;
-  --surface-container-low: #eff5f1;
+  --primary: #0f6b45;
+  --primary-container: #147a50;
+  --primary-soft: #e8f5ee;
+  /* Soft mint field — reads as light green, not grey */
+  --surface: #eef7f1;
+  --surface-mid: #e4f2ea;
+  --surface-elevated: #ffffff;
+  --on-surface: #0f172a;
+  --on-surface-variant: #5b6b63;
+  --surface-container-low: #e2f0e8;
   --surface-container-lowest: #ffffff;
-  --error: #ba1a1a;
+  --surface-container-high: #d5e8dc;
+  --error: #dc2626;
+  --error-soft: #fef2f2;
+  --warning: #d97706;
+  --warning-soft: #fffbeb;
+  --info: #2563eb;
+  --info-soft: #eff6ff;
   --tertiary: #762f35;
-  --outline-variant: rgba(191, 201, 191, 0.15);
+  --outline: #8aa396;
+  --outline-variant: rgba(15, 60, 40, 0.09);
+  --sidebar-bg: #0b1f17;
+  --sidebar-fg: #e2e8f0;
+  --sidebar-muted: #94a3b8;
+  --sidebar-active: #147a50;
+  --card-shadow: 0 1px 2px rgba(15, 60, 40, 0.04), 0 8px 24px rgba(15, 107, 69, 0.06);
+  --card-shadow-hover: 0 4px 12px rgba(15, 60, 40, 0.06), 0 16px 36px rgba(15, 107, 69, 0.08);
+  --radius-card: 16px;
+  --radius-control: 12px;
+  --line-green: rgba(15, 107, 69, 0.045);
+  --line-green-strong: rgba(15, 107, 69, 0.07);
 }
 
 @layer base {
   body {
-    @apply font-sans antialiased text-[#171d1b] bg-[#f5fbf7];
+    @apply font-sans antialiased;
+    color: var(--on-surface);
+    background: var(--surface);
   }
-  
+
   h1, h2, h3, h4, h5, h6 {
-    @apply font-[var(--font-jakarta)] tracking-tight text-[#005131];
+    @apply font-headline tracking-tight;
+    color: var(--on-surface);
   }
 }
 
-.signature-gradient {
-    background: linear-gradient(135deg, #005131 0%, #1a6b45 100%);
-}
+@layer components {
+  .dash-card {
+    background: var(--surface-elevated);
+    border: 1px solid var(--outline-variant);
+    border-radius: var(--radius-card);
+    box-shadow: var(--card-shadow);
+  }
 
-.ambient-shadow {
-    box-shadow: 0px 12px 32px rgba(23, 29, 27, 0.06);
-}
+  .dash-card-hover {
+    @apply dash-card transition-all duration-200;
+  }
+  .dash-card-hover:hover {
+    box-shadow: var(--card-shadow-hover);
+    border-color: rgba(15, 107, 69, 0.18);
+  }
 
-.ghost-border {
-    border: 1px solid rgba(191, 201, 191, 0.15);
+  .dash-btn-primary {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold text-white transition-all duration-200;
+    background: linear-gradient(135deg, #0f6b45 0%, #147a50 100%);
+    border-radius: var(--radius-control);
+    box-shadow: 0 4px 12px rgba(15, 107, 69, 0.22);
+  }
+  .dash-btn-primary:hover {
+    filter: brightness(1.05);
+    transform: translateY(-1px);
+  }
+  .dash-btn-primary:active {
+    transform: translateY(0);
+  }
+  .dash-btn-primary:disabled {
+    opacity: 0.5;
+    pointer-events: none;
+  }
+
+  .dash-btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold transition-all duration-200;
+    color: var(--on-surface);
+    background: var(--surface-elevated);
+    border: 1px solid var(--outline-variant);
+    border-radius: var(--radius-control);
+  }
+  .dash-btn-secondary:hover {
+    background: var(--surface-container-low);
+  }
+
+  .dash-btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 px-3 py-2 text-sm font-semibold transition-colors;
+    color: var(--on-surface-variant);
+    border-radius: var(--radius-control);
+  }
+  .dash-btn-ghost:hover {
+    background: var(--surface-container-low);
+    color: var(--on-surface);
+  }
+
+  .dash-btn-danger {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold transition-all duration-200;
+    color: #dc2626;
+    background: var(--error-soft);
+    border: 1px solid rgba(220, 38, 38, 0.12);
+    border-radius: var(--radius-control);
+  }
+  .dash-btn-danger:hover {
+    background: #fee2e2;
+  }
+
+  .dash-input {
+    @apply w-full text-sm outline-none transition-all;
+    color: var(--on-surface);
+    background: var(--surface-elevated);
+    border: 1px solid var(--outline-variant);
+    border-radius: var(--radius-control);
+    padding: 0.7rem 0.9rem;
+  }
+  .dash-input:focus {
+    border-color: rgba(15, 107, 69, 0.45);
+    box-shadow: 0 0 0 3px rgba(15, 107, 69, 0.12);
+  }
+
+  .dash-label {
+    @apply text-[11px] font-bold uppercase tracking-[0.08em];
+    color: var(--on-surface-variant);
+  }
+
+  .dash-chip {
+    @apply inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide rounded-full;
+  }
+
+  .dash-section-title {
+    @apply text-lg font-bold tracking-tight font-headline;
+    color: var(--on-surface);
+  }
+
+  .dash-muted {
+    color: var(--on-surface-variant);
+  }
+
+  .signature-gradient {
+    background: linear-gradient(135deg, #0f6b45 0%, #147a50 100%);
+  }
+
+  .ambient-shadow {
+    box-shadow: var(--card-shadow);
+  }
+
+  .ghost-border {
+    border: 1px solid var(--outline-variant);
+  }
+
+  /**
+   * Premium light-green app canvas (citizen + authority shells).
+   * Soft mint wash + very thin diagonal hatch lines.
+   */
+  .app-canvas {
+    position: relative;
+    isolation: isolate;
+    background-color: var(--surface);
+    background-image:
+      /* Soft radial glows from brand green */
+      radial-gradient(ellipse 80% 50% at 0% 0%, rgba(20, 122, 80, 0.09), transparent 55%),
+      radial-gradient(ellipse 60% 40% at 100% 10%, rgba(15, 107, 69, 0.06), transparent 50%),
+      radial-gradient(ellipse 70% 50% at 50% 100%, rgba(20, 122, 80, 0.05), transparent 55%),
+      /* Very thin slanting lines */
+      repeating-linear-gradient(
+        -32deg,
+        transparent,
+        transparent 11px,
+        var(--line-green) 11px,
+        var(--line-green) 12px
+      ),
+      /* Gentle vertical wash */
+      linear-gradient(180deg, #f4fbf6 0%, var(--surface) 35%, var(--surface-mid) 100%);
+    background-attachment: fixed;
+  }
+
+  .app-canvas::before {
+    content: '';
+    pointer-events: none;
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    opacity: 0.55;
+    background-image: repeating-linear-gradient(
+      -32deg,
+      transparent,
+      transparent 22px,
+      var(--line-green-strong) 22px,
+      var(--line-green-strong) 23px
+    );
+  }
+
+  /* Glass top bars over green canvas */
+  .app-header-glass {
+    background: rgba(255, 255, 255, 0.72);
+    backdrop-filter: blur(16px) saturate(1.2);
+    -webkit-backdrop-filter: blur(16px) saturate(1.2);
+    border-bottom: 1px solid rgba(15, 107, 69, 0.08);
+  }
+
+  .app-panel {
+    background: rgba(255, 255, 255, 0.88);
+    border: 1px solid rgba(15, 107, 69, 0.08);
+    box-shadow: var(--card-shadow);
+  }
+
+  /* ── Shared green top bars (citizen + authority dashboards) ── */
+  .citizen-topbar,
+  .authority-topbar {
+    background: linear-gradient(
+      180deg,
+      rgba(232, 245, 238, 0.94) 0%,
+      rgba(255, 255, 255, 0.88) 100%
+    );
+    backdrop-filter: blur(18px) saturate(1.25);
+    -webkit-backdrop-filter: blur(18px) saturate(1.25);
+    border-bottom: 1px solid rgba(15, 107, 69, 0.1);
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.7) inset, 0 8px 24px rgba(15, 107, 69, 0.05);
+  }
+
+  .citizen-topbar::before,
+  .authority-topbar::before {
+    content: '';
+    display: block;
+    height: 3px;
+    width: 100%;
+    background: linear-gradient(90deg, #0f6b45 0%, #1a9a5c 45%, #0f6b45 100%);
+    opacity: 0.95;
+  }
+
+  .citizen-search,
+  .authority-search {
+    background: rgba(255, 255, 255, 0.85);
+    border: 1px solid rgba(15, 107, 69, 0.12);
+    box-shadow: 0 1px 2px rgba(15, 107, 69, 0.04);
+    transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+  }
+  .citizen-search:focus-within,
+  .authority-search:focus-within {
+    background: #fff;
+    border-color: rgba(15, 107, 69, 0.35);
+    box-shadow: 0 0 0 4px rgba(15, 107, 69, 0.1);
+  }
+
+  .citizen-icon-btn,
+  .authority-icon-btn {
+    background: rgba(255, 255, 255, 0.9);
+    border: 1px solid rgba(15, 107, 69, 0.12);
+    color: #3d5c4c;
+    transition: background 0.15s, border-color 0.15s, color 0.15s, transform 0.15s;
+  }
+  .citizen-icon-btn:hover,
+  .authority-icon-btn:hover {
+    background: #e8f5ee;
+    border-color: rgba(15, 107, 69, 0.25);
+    color: #0f6b45;
+  }
+
+  .citizen-bottom-nav {
+    background: linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.92) 0%,
+      rgba(232, 245, 238, 0.96) 100%
+    );
+    backdrop-filter: blur(18px) saturate(1.2);
+    -webkit-backdrop-filter: blur(18px) saturate(1.2);
+    border-top: 1px solid rgba(15, 107, 69, 0.12);
+    box-shadow: 0 -8px 28px rgba(15, 107, 69, 0.06);
+  }
+
+  .authority-live-pill {
+    background: rgba(255, 255, 255, 0.9);
+    border: 1px solid rgba(15, 107, 69, 0.14);
+    box-shadow: 0 1px 2px rgba(15, 107, 69, 0.05);
+  }
 }
 
 @keyframes slide-up {
@@ -46,3 +295,131 @@
   animation: slide-up 0.4s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+.civic-status-marker {
+  background: transparent !important;
+  border: none !important;
+}
+
+/* Analytics map: permanent place labels stay readable */
+.analytics-dot-marker,
+.analytics-cross-marker,
+.analytics-hotspot-marker {
+  background: transparent !important;
+  border: none !important;
+}
+
+@keyframes civic-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.15); opacity: 0.85; }
+}
+
+/* Keep map stacking inside its box so it never paints over the sticky navbar (z-[2000]) */
+.leaflet-container {
+  position: relative !important;
+  z-index: 0 !important;
+}
+
+.leaflet-popup-content-wrapper {
+  border-radius: 14px;
+  box-shadow: var(--card-shadow-hover);
+}
+
+.leaflet-popup-content {
+  margin: 12px;
+}
+
+/* Thin scrollbar for dashboard panels */
+.dash-scroll::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.dash-scroll::-webkit-scrollbar-thumb {
+  background: rgba(15, 23, 42, 0.12);
+  border-radius: 999px;
+}
+.dash-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* ── Landing page motion ───────────────────────────────── */
+@keyframes landing-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-12px); }
+}
+@keyframes landing-float-slow {
+  0%, 100% { transform: translateY(0) rotate(-1deg); }
+  50% { transform: translateY(-8px) rotate(1deg); }
+}
+@keyframes landing-pulse-ring {
+  0% { transform: scale(0.6); opacity: 0.7; }
+  100% { transform: scale(1.8); opacity: 0; }
+}
+@keyframes landing-pin-bounce {
+  0%, 100% { transform: translateY(0); }
+  40% { transform: translateY(-10px); }
+  60% { transform: translateY(-4px); }
+}
+@keyframes landing-marquee {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+@keyframes landing-fade-up {
+  from { opacity: 0; transform: translateY(28px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes landing-shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+@keyframes landing-ticker {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+@keyframes landing-glow {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.85; }
+}
+
+.animate-landing-float {
+  animation: landing-float 5s ease-in-out infinite;
+}
+.animate-landing-float-slow {
+  animation: landing-float-slow 7s ease-in-out infinite;
+}
+.animate-landing-pin {
+  animation: landing-pin-bounce 2.4s ease-in-out infinite;
+}
+.animate-landing-marquee {
+  animation: landing-marquee 40s linear infinite;
+}
+.animate-landing-ticker {
+  animation: landing-ticker 28s linear infinite;
+}
+.animate-landing-glow {
+  animation: landing-glow 4s ease-in-out infinite;
+}
+
+.landing-reveal {
+  opacity: 0;
+  transform: translateY(28px);
+  transition: opacity 0.7s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.landing-reveal.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.landing-shimmer-text {
+  background: linear-gradient(
+    90deg,
+    #0f6b45 0%,
+    #34d399 40%,
+    #0f6b45 80%
+  );
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: landing-shimmer 4s linear infinite;
+}

@@ -1,53 +1,250 @@
-import { createClient } from '@/utils/supabase/server';
-import { cookies } from 'next/headers';
+import { createClient } from '@/lib/supabase/server';
 import { NextResponse } from 'next/server';
+import { requireUser, isAuthFailure } from '@/lib/auth';
+import { REPORT_LIST_SELECT, normalizeReportRow } from '@/lib/reports/columns';
+import {
+  applyReportFilters,
+  fetchReportFilterCounts,
+  parseStatusGroup,
+  sanitizeSearch,
+  type ReportListFilters,
+} from '@/lib/reports/filters';
 
 export async function POST(request: Request) {
-  const cookieStore = cookies();
-  const supabase = createClient(cookieStore);
-  const { data: { user } } = await supabase.auth.getUser();
+  const auth = await requireUser();
+  if (isAuthFailure(auth)) return auth.error;
 
-  if (!user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  try {
+    const json = await request.json();
+    const {
+      title,
+      description,
+      category,
+      severity = 'Medium',
+      location,
+      latitude,
+      longitude,
+      image_url,
+      embedding,
+    } = json;
+
+    if (!description && !title) {
+      return NextResponse.json(
+        { error: 'Title or description is required', code: 'BAD_REQUEST' },
+        { status: 400 }
+      );
+    }
+
+    const payload: Record<string, unknown> = {
+      user_id: auth.user.id,
+      title: title || (description || '').slice(0, 80),
+      category: category || 'Other',
+      description: description || '',
+      location: location || null,
+      latitude: latitude ?? null,
+      longitude: longitude ?? null,
+      image_url: image_url || null,
+      status: 'Submitted',
+      severity: severity || 'Medium',
+      priority_score: 0,
+    };
+
+    if (Array.isArray(embedding) && embedding.length === 768) {
+      payload.embedding = embedding;
+    }
+
+    let { data, error } = await auth.supabase.from('reports').insert([payload]).select().single();
+
+    if (error && payload.embedding && /dimension|embedding|vector/i.test(error.message)) {
+      console.warn('Retrying issue insert without embedding:', error.message);
+      delete payload.embedding;
+      ({ data, error } = await auth.supabase.from('reports').insert([payload]).select().single());
+    }
+
+    if (error) {
+      console.error(error);
+      return NextResponse.json({ error: error.message, code: 'DB_ERROR' }, { status: 500 });
+    }
+
+    if (data?.id) {
+      try {
+        const name =
+          (auth.user.user_metadata?.full_name as string) ||
+          auth.user.email?.split('@')[0] ||
+          'Citizen';
+        await auth.supabase.from('issue_history').insert({
+          issue_id: data.id,
+          action_type: 'submission',
+          old_value: null,
+          new_value: 'Submitted',
+          user_name: name,
+          user_id: auth.user.id,
+        });
+      } catch (histErr) {
+        console.warn('Timeline seed failed:', histErr);
+      }
+    }
+
+    return NextResponse.json(data, { status: 201 });
+  } catch (err) {
+    console.error(err);
+    return NextResponse.json({ error: 'Invalid request', code: 'BAD_REQUEST' }, { status: 400 });
   }
-
-  const json = await request.json();
-  const { description, category, severity, location } = json;
-
-  const { data, error } = await supabase
-    .from('issues')
-    .insert([
-      {
-        reporter_id: user.id,
-        category,
-        description,
-        location,
-        status: 'Submitted',
-        severity,
-        ai_score: 0, // Placeholder
-      },
-    ])
-    .select();
-
-  if (error) {
-    console.error(error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
-
-  return NextResponse.json(data);
 }
 
-export async function GET() {
-  const cookieStore = cookies();
-  const supabase = createClient(cookieStore);
-  const { data, error } = await supabase
-    .from('issues')
-    .select('*')
-    .order('created_at', { ascending: false });
+/**
+ * GET /api/issues
+ * Query params:
+ *  - statusGroup: all | open | in_progress | resolved
+ *  - status: exact status (overrides group)
+ *  - category: category name or All
+ *  - q: search text
+ *  - sort: recent | votes | priority
+ *  - mine: true
+ *  - page, pageSize
+ *  - includeCounts: true → { counts: { total, open, in_progress, resolved } }
+ */
+export async function GET(request: Request) {
+  const supabase = createClient();
+  const { searchParams } = new URL(request.url);
 
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  const page = Math.max(0, parseInt(searchParams.get('page') || '0', 10));
+  const pageSize = Math.min(50, Math.max(1, parseInt(searchParams.get('pageSize') || '24', 10)));
+  const category = searchParams.get('category');
+  const status = searchParams.get('status');
+  const statusGroup = searchParams.get('statusGroup') || searchParams.get('filter') || 'all';
+  const sort = searchParams.get('sort') || 'recent';
+  const q = sanitizeSearch(searchParams.get('q') || searchParams.get('search'));
+  const mine = searchParams.get('mine') === 'true';
+  const includeCounts = searchParams.get('includeCounts') === 'true';
+
+  let userId: string | null = null;
+  if (mine) {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized', code: 'UNAUTHORIZED' }, { status: 401 });
+    }
+    userId = user.id;
   }
 
-  return NextResponse.json(data);
+  const filters: ReportListFilters = {
+    statusGroup: parseStatusGroup(statusGroup),
+    status,
+    category,
+    q,
+    sort,
+    mine,
+    userId,
+    page,
+    pageSize,
+  };
+
+  try {
+    let query = supabase.from('reports').select(REPORT_LIST_SELECT);
+    query = applyReportFilters(query, filters);
+
+    const { data, error } = await query;
+
+    if (error) {
+      console.error('[GET /api/issues]', error);
+      // Fallback: simpler filters (eq/in only) if ilike/or fails on schema
+      let fallback = supabase.from('reports').select(REPORT_LIST_SELECT);
+      if (mine && userId) fallback = fallback.eq('user_id', userId);
+      if (category && category !== 'All') fallback = fallback.eq('category', category);
+      const group = parseStatusGroup(statusGroup);
+      if (status && status !== 'All') {
+        fallback = fallback.eq('status', status);
+      } else if (group === 'open') {
+        fallback = fallback.in('status', ['Submitted', 'Pending']);
+      } else if (group === 'in_progress') {
+        fallback = fallback.in('status', ['Under Review', 'In Progress']);
+      } else if (group === 'resolved') {
+        fallback = fallback.in('status', ['Resolved', 'Closed', 'Done']);
+      }
+      if (q) {
+        fallback = fallback.or(
+          `title.ilike.%${q}%,description.ilike.%${q}%,location.ilike.%${q}%`
+        );
+      }
+      if (sort === 'votes' || sort === 'priority') {
+        fallback = fallback
+          .order('priority_score', { ascending: false })
+          .order('created_at', { ascending: false });
+      } else {
+        fallback = fallback.order('created_at', { ascending: false });
+      }
+      const from = page * pageSize;
+      fallback = fallback.range(from, from + pageSize - 1);
+      const fb = await fallback;
+      if (fb.error) {
+        return NextResponse.json({ error: fb.error.message, code: 'DB_ERROR' }, { status: 500 });
+      }
+      const rows = ((fb.data as Record<string, unknown>[]) || []).map((r) =>
+        normalizeReportRow(r)
+      );
+
+      let fbCounts:
+        | { total: number; open: number; in_progress: number; resolved: number }
+        | undefined;
+      if (includeCounts) {
+        try {
+          fbCounts = await fetchReportFilterCounts(supabase, {
+            category,
+            q,
+            mine,
+            userId,
+          });
+        } catch {
+          /* optional */
+        }
+      }
+
+      return NextResponse.json({
+        data: rows,
+        page,
+        pageSize,
+        hasMore: rows.length === pageSize,
+        filters: { statusGroup: group, category, q, sort },
+        counts: fbCounts,
+      });
+    }
+
+    const rows = ((data as Record<string, unknown>[]) || []).map((r) => normalizeReportRow(r));
+
+    let counts:
+      | { total: number; open: number; in_progress: number; resolved: number }
+      | undefined;
+
+    if (includeCounts) {
+      try {
+        counts = await fetchReportFilterCounts(supabase, {
+          category,
+          q,
+          mine,
+          userId,
+        });
+      } catch (countErr) {
+        console.warn('[GET /api/issues] counts failed', countErr);
+      }
+    }
+
+    return NextResponse.json({
+      data: rows,
+      page,
+      pageSize,
+      hasMore: rows.length === pageSize,
+      filters: {
+        statusGroup: parseStatusGroup(statusGroup),
+        category: category || 'All',
+        q,
+        sort,
+      },
+      counts,
+    });
+  } catch (err) {
+    console.error('[GET /api/issues] unexpected', err);
+    return NextResponse.json({ error: 'Internal error', code: 'INTERNAL' }, { status: 500 });
+  }
 }

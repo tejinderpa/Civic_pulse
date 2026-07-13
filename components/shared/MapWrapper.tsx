@@ -11,6 +11,8 @@ interface MapWrapperProps {
   className?: string;
   scrollWheelZoom?: boolean;
   tileUrl?: string;
+  /** When false, skip auto flyTo (use when FitBounds controls the view). */
+  autoFly?: boolean;
 }
 
 // Helper to update map view when center/zoom props change
@@ -31,7 +33,8 @@ export default function MapWrapper({
   children,
   className = "h-[500px] w-full",
   scrollWheelZoom = true,
-  tileUrl = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+  tileUrl = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+  autoFly = true,
 }: MapWrapperProps) {
   return (
     <div className={`relative ${className} overflow-hidden rounded-[32px] border border-[var(--outline-variant)] shadow-inner group z-0`}>
@@ -40,13 +43,13 @@ export default function MapWrapper({
         zoom={zoom}
         style={{ height: '100%', width: '100%', zIndex: 0 }}
         scrollWheelZoom={scrollWheelZoom}
-        zoomControl={false} // We can add custom zoom controls later for premium feel
+        zoomControl={false}
       >
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
           url={tileUrl}
         />
-        <ChangeView center={center} zoom={zoom} />
+        {autoFly && <ChangeView center={center} zoom={zoom} />}
         {children}
       </MapContainer>
     </div>

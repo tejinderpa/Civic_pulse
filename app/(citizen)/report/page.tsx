@@ -7,6 +7,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { useNearbyIssues } from '@/hooks/useMapLogic';
+import { compressImageFile } from '@/lib/images/compress';
 import { Marker, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 
@@ -161,22 +162,26 @@ export default function ReportPage() {
     }, { timeout: 8000 });
   };
 
-  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      setReportData(prev => ({ 
-        ...prev, 
-        imageFile: file,
-        imageUrl: URL.createObjectURL(file) 
-      }));
-    }
+    if (!file) return;
+
+    // Auto-resize/compress large phone photos before preview + upload
+    const compressed = await compressImageFile(file);
+    setReportData((prev) => {
+      if (prev.imageUrl?.startsWith('blob:')) URL.revokeObjectURL(prev.imageUrl);
+      return {
+        ...prev,
+        imageFile: compressed,
+        imageUrl: URL.createObjectURL(compressed),
+      };
+    });
   };
 
   const handleSubmit = async () => {
     setLoading(true);
 
     try {
-      // Direct session verification at the moment of click
       const { data: { user: currentUser }, error: userError } = await supabase.auth.getUser();
       
       if (!currentUser || userError) {
@@ -187,20 +192,24 @@ export default function ReportPage() {
 
       let finalImageUrl = '';
 
-      
-      // Upload Image if exists
+      // Upload image (already auto-compressed on pick)
       if (reportData.imageFile) {
-        const fileExt = reportData.imageFile.name.split('.').pop();
-        const fileName = `${Math.random()}.${fileExt}`;
+        let uploadFile = reportData.imageFile;
+        // Safety: compress again if somehow still huge
+        if (uploadFile.size > 2 * 1024 * 1024) {
+          uploadFile = await compressImageFile(uploadFile);
+        }
+
+        const fileName = `${crypto.randomUUID?.() ?? Math.random().toString(36).slice(2)}.jpg`;
         const filePath = `reports/${fileName}`;
         
         const { error: uploadError } = await supabase.storage
           .from('civicpulse-assets')
-          .upload(filePath, reportData.imageFile);
+          .upload(filePath, uploadFile, { contentType: uploadFile.type || 'image/jpeg' });
           
         if (uploadError) {
           if (uploadError.message.includes('not found')) {
-            alert('Note: Storage bucket "civicpulse-assets" not found in Supabase. Proceeding without image upload.');
+            console.warn('Storage bucket missing; continuing without image.');
           } else {
             throw uploadError;
           }
@@ -212,33 +221,37 @@ export default function ReportPage() {
         }
       }
 
-
-      // Generate embedding if possible
-      let finalEmbedding = null;
+      // Embedding is optional — never block the user if AI fails or dims mismatch
+      let finalEmbedding: number[] | null = null;
       try {
-        const res = await fetch('/api/ai/embed', { // We will need to create this embedding generator endpoint or generate it here since it's client side... wait, we shouldn't expose API key to client.
+        const res = await fetch('/api/ai/embed', {
            method: 'POST',
            headers: { 'Content-Type': 'application/json' },
            body: JSON.stringify({ text: `${reportData.category || 'unknown'} issue: ${reportData.description}` })
         });
         if (res.ok) {
            const data = await res.json();
-           finalEmbedding = data.embedding;
+           if (Array.isArray(data.embedding) && data.embedding.length === 768) {
+             finalEmbedding = data.embedding;
+           } else if (Array.isArray(data.embedding) && data.embedding.length > 0) {
+             // Server should already fit to 768; ignore unexpected sizes
+             console.warn('Skipping embedding: unexpected length', data.embedding.length);
+           }
         }
       } catch (err) {
         console.error('Silent failure creating embeddings', err);
       }
 
-      // Insert Report
-      const payload: any = {
+      const payload: Record<string, unknown> = {
         user_id: currentUser.id,
-        title: reportData.title,
-        description: reportData.description,
-        category: reportData.category,
-        location: reportData.location,
-        image_url: finalImageUrl,
-        status: 'pending',
-        severity: reportData.severity,
+        title: reportData.title || (reportData.description || '').slice(0, 80) || 'Citizen report',
+        description: reportData.description || '',
+        category: reportData.category?.trim() || 'Other',
+        location: reportData.location || null,
+        image_url: finalImageUrl || null,
+        status: 'Submitted',
+        severity: reportData.severity || 'Medium',
+        priority_score: 0,
         latitude: reportData.latitude,
         longitude: reportData.longitude,
       };
@@ -247,16 +260,69 @@ export default function ReportPage() {
         payload.embedding = finalEmbedding;
       }
 
-      const { error: insertError } = await supabase
+      let { data: inserted, error: insertError } = await supabase
         .from('reports')
-        .insert(payload);
+        .insert(payload)
+        .select('id')
+        .single();
 
+      // If vector dim still fails, retry without embedding so the report goes through
+      if (
+        insertError &&
+        finalEmbedding &&
+        /dimension|embedding|vector/i.test(insertError.message)
+      ) {
+        console.warn('Embedding insert failed, retrying without embedding:', insertError.message);
+        delete payload.embedding;
+        ({ data: inserted, error: insertError } = await supabase
+          .from('reports')
+          .insert(payload)
+          .select('id')
+          .single());
+      }
 
       if (insertError) throw insertError;
 
+      // Warm shared cache so feed/admin open instantly with this report
+      if (inserted?.id) {
+        try {
+          const { reportsCache } = await import('@/lib/cache/reports-cache');
+          reportsCache.upsertOne({
+            ...payload,
+            id: inserted.id,
+            created_at: new Date().toISOString(),
+          });
+        } catch {
+          /* non-blocking */
+        }
+      }
+
+      // Seed progress timeline (best-effort)
+      if (inserted?.id) {
+        try {
+          const reporterName =
+            (currentUser.user_metadata?.full_name as string) ||
+            currentUser.email?.split('@')[0] ||
+            'Citizen';
+          await supabase.from('issue_history').insert({
+            issue_id: inserted.id,
+            action_type: 'submission',
+            old_value: null,
+            new_value: 'Submitted',
+            user_name: reporterName,
+            user_id: currentUser.id,
+          });
+        } catch (histErr) {
+          console.warn('Timeline seed failed (report still saved):', histErr);
+        }
+        router.push(`/issues/${inserted.id}`);
+        return;
+      }
+
       router.push('/my-reports');
-    } catch (err: any) {
-      alert(`Submission failed: ${err.message}`);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Something went wrong';
+      alert(`Submission failed: ${message}`);
     } finally {
       setLoading(false);
     }
@@ -272,7 +338,7 @@ export default function ReportPage() {
   ];
 
   return (
-    <div className="min-h-screen bg-[#FDFEFE] flex flex-col items-center pb-32">
+    <div className="min-h-full flex flex-col items-center pb-32 bg-transparent">
       {/* Progress Header */}
       <div className="w-full max-w-4xl px-8 pt-12">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-8 mb-12">

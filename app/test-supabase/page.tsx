@@ -1,29 +1,22 @@
-'use client'
+import { redirect } from 'next/navigation';
 
-import { useEffect, useState } from 'react'
-import { createClient } from '@/utils/supabase/client'
-const supabase = createClient()
-
-export default function TestPage() {
-  const [data, setData] = useState<any>(null)
-  const [error, setError] = useState<any>(null)
-
-  useEffect(() => {
-    async function test() {
-      const { data, error } = await supabase.from('issues').select('*')
-      console.log(data, error)
-      setData(data)
-      setError(error)
-    }
-    test()
-  }, [])
+/** Dev-only diagnostic page — blocked in production via middleware and here. */
+export default function TestSupabasePage() {
+  if (process.env.NODE_ENV === 'production') {
+    redirect('/');
+  }
 
   return (
-    <div className="p-8">
-      <h1>Supabase Connection Test</h1>
-      {error && <pre className="text-red-500">Error: {JSON.stringify(error, null, 2)}</pre>}
-      {data && <pre className="text-green-500">Data: {JSON.stringify(data, null, 2)}</pre>}
-      {!data && !error && <p>Loading...</p>}
+    <div className="p-10 max-w-xl mx-auto">
+      <h1 className="text-2xl font-headline font-bold text-primary mb-4">Supabase diagnostic</h1>
+      <p className="text-on-surface-variant font-body mb-4">
+        This page is only available in development. Use the Supabase dashboard or seed scripts for data checks.
+      </p>
+      <p className="text-sm text-outline">
+        Set <code className="bg-surface-container-high px-1 rounded">NEXT_PUBLIC_SUPABASE_URL</code> and{' '}
+        <code className="bg-surface-container-high px-1 rounded">NEXT_PUBLIC_SUPABASE_ANON_KEY</code> in{' '}
+        <code className="bg-surface-container-high px-1 rounded">.env.local</code>.
+      </p>
     </div>
-  )
+  );
 }

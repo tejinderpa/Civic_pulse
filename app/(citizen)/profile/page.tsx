@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { createClient } from '@/utils/supabase/client';
+import { createClient } from '@/lib/supabase/client';
 import Image from 'next/image';
 import Link from 'next/link';
 
@@ -46,7 +46,7 @@ export default function ProfilePage() {
           firstName: metadata.full_name?.split(' ')[0] || 'Citizen',
           lastName: metadata.full_name?.split(' ')[1] || 'User',
           email: user.email || '',
-          location: metadata.location || 'Central Park West, New York',
+          location: metadata.location || '',
           avatar_url: metadata.avatar_url || ''
         });
         setNotifs({
@@ -147,13 +147,13 @@ export default function ProfilePage() {
   ];
 
   if (loading) return (
-    <div className="min-h-screen flex items-center justify-center bg-[#F8FAF9]">
+    <div className="min-h-[50vh] flex items-center justify-center bg-transparent">
       <div className="w-12 h-12 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
     </div>
   );
 
   return (
-    <div className="min-h-screen bg-[#F8FAF9] flex relative overflow-hidden">
+    <div className="min-h-full flex relative overflow-hidden bg-transparent">
       <div className="absolute top-[-10%] left-[-5%] w-[40%] h-[40%] bg-primary/5 rounded-full blur-[120px]" />
       
       {/* Action Rail */}

@@ -1,11 +1,19 @@
 export interface KPIStats {
   totalIssues: number;
+  openIssues: number;
   resolvedPercent: number;
   avgResolutionHours: number;
   slaCompliancePercent: number;
+  /** Share of all reports flagged as duplicates (duplicate_of set) */
   duplicateRate: number;
+  /** Count of reports flagged as duplicates */
+  duplicatesFlagged: number;
+  /** Duplicates auto-rejected by the system (Rejected + duplicate_of) */
+  duplicatesAutoRejected: number;
+  /** All rejected reports (any reason) */
+  totalRejected: number;
   trends: {
-    totalIssues: number; // % change vs previous
+    totalIssues: number;
     resolvedPercent: number;
     slaCompliancePercent: number;
   };
@@ -25,6 +33,8 @@ export interface CategoryStat {
 
 export interface DepartmentStat {
   department: string;
+  total: number;
+  resolved: number;
   avgResolutionHours: number;
   slaCompliancePercent: number;
 }
@@ -45,6 +55,10 @@ export interface MapPoint {
   category: string;
   status: string;
   votes: number;
+  location: string;
+  shortLabel: string;
+  isDuplicate: boolean;
+  isRejected: boolean;
 }
 
 export interface PriorityInsight {
@@ -53,6 +67,7 @@ export interface PriorityInsight {
   address: string;
   aiScore: number;
   severity: string;
+  status: string;
 }
 
 export interface DuplicateCluster {
@@ -61,6 +76,21 @@ export interface DuplicateCluster {
   address: string;
   category: string;
   count: number;
+  autoRejected: number;
+  open: number;
+}
+
+/** Geographic concentration for task-force planning */
+export interface HotspotZone {
+  id: string;
+  label: string;
+  lat: number;
+  lng: number;
+  count: number;
+  openCount: number;
+  criticalCount: number;
+  categories: string[];
+  recommendation: string;
 }
 
 export interface AnalyticsResponse {
@@ -69,8 +99,11 @@ export interface AnalyticsResponse {
   categoryStats: CategoryStat[];
   departmentStats: DepartmentStat[];
   resolutionRateTrend: ResolutionTrendPoint[];
-  topAreas: { address: string; count: number; lat: number; lng: number }[];
+  topAreas: { address: string; count: number; openCount: number; lat: number; lng: number }[];
   allIssuePoints: MapPoint[];
   priorityIssues: PriorityInsight[];
   duplicateClusters: DuplicateCluster[];
+  hotspotZones: HotspotZone[];
+  mapCenter: [number, number];
+  mapZoom: number;
 }

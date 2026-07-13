@@ -12,19 +12,14 @@ export default function AdminAuthCallbackPage() {
 
   useEffect(() => {
     const handleCallback = async () => {
-      // Exchange the code for a session (handled automatically by Supabase SSR)
-      const { data: { user }, error } = await supabase.auth.getUser();
+      const {
+        data: { user },
+        error,
+      } = await supabase.auth.getUser();
 
       if (error || !user) {
         setErrorMsg('Authentication failed. Please try again.');
         setStatus('error');
-        return;
-      }
-
-      // Check role: try user_metadata first, then profiles table
-      const metaRole = user.user_metadata?.role;
-      if (metaRole && ['admin', 'authority_staff'].includes(metaRole)) {
-        router.push('/admin');
         return;
       }
 
@@ -43,7 +38,6 @@ export default function AdminAuthCallbackPage() {
         // profiles table may not exist yet
       }
 
-      // Not authorized — sign out and redirect with error
       await supabase.auth.signOut();
       router.push('/admin-login?error=not-authorized');
     };

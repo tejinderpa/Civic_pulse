@@ -1,29 +1,61 @@
-import { LocationSuggestion, GeocodeResult } from './location-type';
+import { LocationSuggestion } from './location-type';
 
 const NOMINATIM_BASE_URL = 'https://nominatim.openstreetmap.org';
 
+/** Soft focus around Jalandhar / Punjab (lon_min, lat_min, lon_max, lat_max) */
+const INDIA_VIEWBOX = '68.0,6.5,97.5,35.5';
+
+const DEFAULT_HEADERS = {
+  'User-Agent': 'CivicPulse-App/1.0 (civicpulse.local)',
+  Accept: 'application/json',
+};
+
 /**
- * Searches for location suggestions based on a query string.
+ * Searches for location suggestions. Biased to India, unbounded so other
+ * cities still work.
  */
 export async function searchLocation(query: string): Promise<LocationSuggestion[]> {
-  if (!query || query.length < 3) return [];
+  if (!query || query.trim().length < 2) return [];
 
   try {
-    const response = await fetch(
-      `${NOMINATIM_BASE_URL}/search?q=${encodeURIComponent(query)}&format=json&addressdetails=1&limit=5`,
-      {
-        headers: {
-          'User-Agent': 'CivicPulse-App (contact: civicpulse@example.com)', // Recommended by Nominatim Usage Policy
-        },
-      }
-    );
+    const params = new URLSearchParams({
+      q: query.trim(),
+      format: 'json',
+      addressdetails: '1',
+      limit: '6',
+      countrycodes: 'in',
+      viewbox: INDIA_VIEWBOX,
+      bounded: '0',
+    });
 
-    if (!response.ok) throw new Error('Failed to fetch from Nominatim');
+    const response = await fetch(`${NOMINATIM_BASE_URL}/search?${params}`, {
+      headers: DEFAULT_HEADERS,
+      next: { revalidate: 0 },
+    });
 
-    return await response.json();
+    if (!response.ok) throw new Error(`Nominatim search failed: ${response.status}`);
+
+    const data = await response.json();
+    return Array.isArray(data) ? data : [];
   } catch (error) {
     console.error('Geocoding search error:', error);
-    return [];
+    // Fallback without country bias
+    try {
+      const params = new URLSearchParams({
+        q: query.trim(),
+        format: 'json',
+        addressdetails: '1',
+        limit: '6',
+      });
+      const response = await fetch(`${NOMINATIM_BASE_URL}/search?${params}`, {
+        headers: DEFAULT_HEADERS,
+      });
+      if (!response.ok) return [];
+      const data = await response.json();
+      return Array.isArray(data) ? data : [];
+    } catch {
+      return [];
+    }
   }
 }
 
@@ -32,21 +64,23 @@ export async function searchLocation(query: string): Promise<LocationSuggestion[
  */
 export async function reverseGeocode(lat: number, lon: number): Promise<string> {
   try {
-    const response = await fetch(
-      `${NOMINATIM_BASE_URL}/reverse?lat=${lat}&lon=${lon}&format=json&addressdetails=1`,
-      {
-        headers: {
-          'User-Agent': 'CivicPulse-App (contact: civicpulse@example.com)',
-        },
-      }
-    );
+    const params = new URLSearchParams({
+      lat: String(lat),
+      lon: String(lon),
+      format: 'json',
+      addressdetails: '1',
+    });
 
-    if (!response.ok) throw new Error('Failed to fetch from Nominatim');
+    const response = await fetch(`${NOMINATIM_BASE_URL}/reverse?${params}`, {
+      headers: DEFAULT_HEADERS,
+    });
+
+    if (!response.ok) throw new Error(`Nominatim reverse failed: ${response.status}`);
 
     const data = await response.json();
-    return data.display_name || 'Unknown Location';
+    return data.display_name || data.name || 'Your current location';
   } catch (error) {
     console.error('Reverse geocoding error:', error);
-    return 'Unknown Location';
+    return 'Your current location';
   }
 }

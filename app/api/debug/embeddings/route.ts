@@ -1,45 +1,22 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { generateEmbedding } from '@/lib/ai/gemini';
-import { cosineSimilarity, calculateKeywordOverlap } from '@/lib/ai/similarity';
+import { NextResponse } from 'next/server';
+import { requireAdmin, isAdminFailure } from '@/lib/auth';
 
-export async function POST(req: NextRequest) {
-  const { text1, text2, category1, category2 } = await req.json();
-
-  if (!text1 || !text2) {
-    return NextResponse.json({ error: 'Missing text inputs' }, { status: 400 });
+/**
+ * Debug embeddings endpoint — admin-only and disabled in production.
+ */
+export async function GET() {
+  if (process.env.NODE_ENV === 'production') {
+    return NextResponse.json({ error: 'Not found' }, { status: 404 });
   }
 
-  try {
-    const emb1 = await generateEmbedding(`${category1 || 'unknown'} issue: ${text1}`);
-    const emb2 = await generateEmbedding(`${category2 || 'unknown'} issue: ${text2}`);
+  const auth = await requireAdmin();
+  if (isAdminFailure(auth)) return auth.error;
 
-    const semanticSimilarity = cosineSimilarity(emb1, emb2);
-    
-    const categoryMatch = (category1 === category2 && category1 !== undefined) ? 1 : 0;
-    const keywordOverlap = calculateKeywordOverlap(text1, text2);
-    
-    const finalScore = (semanticSimilarity * 0.6) + (categoryMatch * 0.3) + (keywordOverlap * 0.1);
+  return NextResponse.json({
+    message: 'Debug embeddings endpoint is gated. Use local tooling instead.',
+  });
+}
 
-    let status = 'none';
-    if (finalScore > 0.75) status = 'duplicate';
-    else if (finalScore >= 0.60) status = 'suggest';
-
-    return NextResponse.json({
-      text1,
-      text2,
-      category1,
-      category2,
-      breakdown: {
-        semanticSimilarity: Number(semanticSimilarity.toFixed(3)),
-        categoryMatch,
-        keywordOverlap: Number(keywordOverlap.toFixed(3)),
-      },
-      finalScore: Number(finalScore.toFixed(3)),
-      status,
-      length1: emb1.length,
-      length2: emb2.length
-    });
-  } catch (error) {
-    return NextResponse.json({ error: 'Embedding failed' }, { status: 500 });
-  }
+export async function POST() {
+  return GET();
 }

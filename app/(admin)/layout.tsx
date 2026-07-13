@@ -4,14 +4,15 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { createClient } from '../../lib/supabase/client';
+import { loadAdminReadIds } from '@/lib/admin/notifications';
 
 const navItems = [
   { href: '/admin', icon: 'dashboard', label: 'Dashboard', exact: true },
   { href: '/admin/issues', icon: 'assignment', label: 'Issue Management' },
   { href: '/admin/analytics', icon: 'bar_chart', label: 'Analytics' },
   { href: '/admin/task-forces', icon: 'groups', label: 'Task Forces' },
-  { href: '/admin/settings', icon: 'settings', label: 'Settings' },
   { href: '/admin/notifications', icon: 'notifications', label: 'Notifications' },
+  { href: '/admin/settings', icon: 'settings', label: 'Settings' },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
@@ -19,13 +20,21 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const router = useRouter();
   const supabase = createClient();
   const [adminName, setAdminName] = useState('Administrator');
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [adminEmail, setAdminEmail] = useState('');
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
 
   useEffect(() => {
+    setIsSidebarOpen(false);
+  }, [pathname]);
+
+  useEffect(() => {
     const getProfile = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
       if (!user) return;
+      setAdminEmail(user.email || '');
 
       const { data: profile } = await supabase
         .from('profiles')
@@ -39,20 +48,46 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     };
     getProfile();
 
+    // Ops inbox unread from shared cache (instant) + background sync
     const getUnreadCount = async () => {
-      const { data } = await supabase.from('notifications').select('id', { count: 'exact' }).eq('is_read', false);
-      setUnreadCount(data?.length || 0);
+      try {
+        const { ensureReportsSynced } = await import('@/lib/cache/reports-sync');
+        const { reportsCache } = await import('@/lib/cache/reports-cache');
+        await ensureReportsSynced(supabase);
+        const read = loadAdminReadIds();
+        const unread = reportsCache
+          .getAll()
+          .slice(0, 100)
+          .filter((r) => !read.has(`report-${r.id}`)).length;
+        setUnreadCount(unread);
+      } catch {
+        setUnreadCount(0);
+      }
     };
     getUnreadCount();
 
-    const channel = supabase.channel(`layout_notifications_${Math.random()}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications' }, () => {
+    const channel = supabase
+      .channel('admin_layout_reports_inbox')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'reports' }, () => {
         getUnreadCount();
       })
       .subscribe();
 
-    return () => { supabase.removeChannel(channel); };
-  }, [supabase]);
+    const refreshBadge = () => getUnreadCount();
+    window.addEventListener('focus', refreshBadge);
+    window.addEventListener('civicpulse-admin-notif-read', refreshBadge);
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === 'civicpulse_admin_notif_read_v1') refreshBadge();
+    };
+    window.addEventListener('storage', onStorage);
+
+    return () => {
+      supabase.removeChannel(channel);
+      window.removeEventListener('focus', refreshBadge);
+      window.removeEventListener('civicpulse-admin-notif-read', refreshBadge);
+      window.removeEventListener('storage', onStorage);
+    };
+  }, [supabase, pathname]);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -62,131 +97,208 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const isActive = (href: string, exact?: boolean) =>
     exact ? pathname === href : pathname.startsWith(href);
 
-  const pageTitle = pathname === '/admin' 
-    ? 'Authority Dashboard' 
-    : pathname.split('/').pop()?.replace('-', ' ') ?? 'Admin';
+  const pageTitles: Record<string, { title: string; crumb: string }> = {
+    '/admin': { title: 'Operations Dashboard', crumb: 'Overview' },
+    '/admin/issues': { title: 'Issue Management', crumb: 'Operations' },
+    '/admin/analytics': { title: 'Analytics', crumb: 'Insights' },
+    '/admin/task-forces': { title: 'Task Forces', crumb: 'Dispatch' },
+    '/admin/settings': { title: 'Settings', crumb: 'System' },
+    '/admin/notifications': { title: 'Notifications', crumb: 'Inbox' },
+  };
+  const page = pageTitles[pathname] || { title: 'Admin', crumb: 'Authority' };
 
-  return (
-    <div className="min-h-screen bg-[var(--surface)] text-[var(--on-surface)] font-['Manrope'] overflow-x-hidden">
-      {/* Background Accents */}
-      <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
-        <div className="absolute -top-[10%] -left-[10%] w-[40%] h-[40%] bg-[var(--primary)] opacity-[0.03] blur-[120px] rounded-full"></div>
-        <div className="absolute top-[20%] -right-[5%] w-[30%] h-[30%] bg-[#F4A623] opacity-[0.03] blur-[100px] rounded-full"></div>
+  const SidebarBody = (
+    <div className="flex h-full flex-col px-4 py-6">
+      <div className="mb-8 px-2">
+        <Link href="/admin" className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500/20 ring-1 ring-emerald-400/30">
+            <span
+              className="material-symbols-outlined text-emerald-300 text-[22px]"
+              style={{ fontVariationSettings: "'FILL' 1" }}
+            >
+              shield
+            </span>
+          </div>
+          <div>
+            <p className="font-headline text-base font-bold tracking-tight text-white leading-none">
+              CivicPulse
+            </p>
+            <p className="mt-1 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">
+              Authority console
+            </p>
+          </div>
+        </Link>
+        <Link
+          href="/feed"
+          className="mt-4 inline-flex items-center gap-1 px-2 text-[11px] font-semibold text-slate-500 hover:text-emerald-300 transition-colors"
+        >
+          <span className="material-symbols-outlined text-[14px]">arrow_back</span>
+          Citizen app
+        </Link>
       </div>
 
-      {/* Sidebar */}
-      <aside 
-        className={`fixed inset-y-0 left-0 z-50 w-72 bg-emerald-50/80 backdrop-blur-md border-r border-emerald-900/5 shadow-xl shadow-emerald-900/5 transition-transform duration-300 lg:translate-x-0 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}
-      >
-        <div className="flex flex-col h-full px-6 py-8">
-          {/* Logo Area */}
-          <div className="mb-10 px-2">
-            <h1 className="text-xl font-bold tracking-tighter text-emerald-950">The Digital Common</h1>
-            <p className="text-xs font-medium text-emerald-800/70 tracking-tight uppercase">Civic Admin Portal</p>
-          </div>
-
-          {/* Navigation */}
-          <nav className="flex-1 space-y-1">
-            {navItems.map((item) => {
-              const active = isActive(item.href, item.exact);
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group ${
-                    active 
-                      ? 'bg-white text-emerald-700 font-bold shadow-sm scale-98 active:scale-95' 
-                      : 'text-emerald-800/70 hover:bg-white/50 hover:text-emerald-950'
-                  }`}
-                >
-                  <span className={`material-symbols-outlined text-[20px] ${active ? '' : 'opacity-70 group-hover:opacity-100'}`} style={active ? { fontVariationSettings: "'FILL' 1" } : {}}>
-                    {item.icon}
-                  </span>
-                  <span className="font-plus-jakarta text-sm font-medium tracking-tight flex-1">{item.label}</span>
-                  {item.href === '/admin/notifications' && unreadCount > 0 && (
-                    <span className="bg-red-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full shadow-lg">
-                      {unreadCount}
-                    </span>
-                  )}
-                </Link>
-              );
-            })}
-          </nav>
-
-          {/* User Profile & Sign Out */}
-          <div className="mt-auto pt-6 border-t border-[var(--outline-variant)]">
-            <div className="bg-white/40 rounded-2xl p-4 mb-4 border border-[var(--outline-variant)]">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-[var(--primary-container)] text-white flex items-center justify-center font-black text-sm">
-                  {adminName[0]?.toUpperCase()}
-                </div>
-                <div className="min-w-0">
-                  <p className="text-sm font-bold truncate">{adminName}</p>
-                  <p className="text-[10px] text-[var(--on-surface-variant)] font-medium">Ops Supervisor</p>
-                </div>
-              </div>
-            </div>
-            <button 
-              onClick={handleLogout}
-              className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-2xl bg-[#762f35]/5 text-[#762f35] font-bold text-sm transition-all hover:bg-[#762f35]/10 border border-[#762f35]/10"
+      <p className="mb-2 px-3 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-600">
+        Operations
+      </p>
+      <nav className="flex-1 space-y-0.5">
+        {navItems.map((item) => {
+          const active = isActive(item.href, item.exact);
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              onClick={() => setIsSidebarOpen(false)}
+              className={`group flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm transition-all duration-150 ${
+                active
+                  ? 'bg-white/10 text-white font-semibold shadow-sm ring-1 ring-white/10'
+                  : 'text-slate-400 hover:bg-white/5 hover:text-slate-100 font-medium'
+              }`}
             >
-              <span className="material-symbols-outlined text-[18px]">logout</span>
-              Sign Out
-            </button>
+              <span
+                className={`material-symbols-outlined text-[20px] ${
+                  active ? 'text-emerald-300' : 'text-slate-500 group-hover:text-slate-300'
+                }`}
+                style={active ? { fontVariationSettings: "'FILL' 1" } : undefined}
+              >
+                {item.icon}
+              </span>
+              <span className="flex-1 tracking-tight">{item.label}</span>
+              {item.href === '/admin/notifications' && unreadCount > 0 && (
+                <span className="rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-black text-white min-w-[1.25rem] text-center">
+                  {unreadCount}
+                </span>
+              )}
+            </Link>
+          );
+        })}
+      </nav>
+
+      <div className="mt-auto space-y-3 border-t border-white/5 pt-5">
+        <div className="rounded-2xl bg-white/5 p-3 ring-1 ring-white/5">
+          <div className="flex items-center gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-500/20 text-sm font-bold text-emerald-200">
+              {adminName[0]?.toUpperCase() || 'A'}
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-semibold text-white">{adminName}</p>
+              <p className="truncate text-[11px] text-slate-500">
+                {adminEmail || 'Ops supervisor'}
+              </p>
+            </div>
           </div>
         </div>
+        <button
+          type="button"
+          onClick={handleLogout}
+          className="flex w-full items-center justify-center gap-2 rounded-xl border border-white/10 py-2.5 text-xs font-semibold text-slate-400 hover:bg-white/5 hover:text-white transition-colors"
+        >
+          <span className="material-symbols-outlined text-[16px]">logout</span>
+          Sign out
+        </button>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="min-h-screen app-canvas text-on-surface overflow-x-hidden">
+      {isSidebarOpen && (
+        <button
+          type="button"
+          aria-label="Close sidebar"
+          className="fixed inset-0 z-40 bg-slate-900/50 backdrop-blur-sm lg:hidden"
+          onClick={() => setIsSidebarOpen(false)}
+        />
+      )}
+
+      {/* Desktop sidebar */}
+      <aside className="fixed inset-y-0 left-0 z-50 hidden w-[260px] bg-[var(--sidebar-bg)] lg:flex flex-col border-r border-black/20">
+        {SidebarBody}
       </aside>
 
-      {/* Main Content Area */}
-      <div className={`lg:ml-72 min-h-screen flex flex-col transition-all duration-300`}>
-        {/* Top Navbar */}
-        <header className="sticky top-0 z-40 bg-[var(--surface)]/80 backdrop-blur-xl border-b border-[var(--outline-variant)] px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <button 
-                className="lg:hidden w-10 h-10 flex items-center justify-center rounded-xl bg-[var(--surface-container-low)] text-[var(--on-surface)]"
-                onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+      {/* Mobile drawer */}
+      <aside
+        className={`fixed inset-y-0 left-0 z-50 w-[280px] bg-[var(--sidebar-bg)] flex flex-col transition-transform duration-300 lg:hidden ${
+          isSidebarOpen ? 'translate-x-0' : '-translate-x-full'
+        }`}
+      >
+        {SidebarBody}
+      </aside>
+
+      <div className="lg:ml-[260px] min-h-screen flex flex-col relative z-[1]">
+        <header className="authority-topbar sticky top-0 z-30">
+          <div className="flex items-center justify-between gap-3 sm:gap-4 px-4 py-3 lg:px-8">
+            <div className="flex items-center gap-3 min-w-0">
+              <button
+                type="button"
+                className="lg:hidden authority-icon-btn flex h-10 w-10 items-center justify-center rounded-xl"
+                onClick={() => setIsSidebarOpen(true)}
+                aria-label="Open menu"
               >
-                <span className="material-symbols-outlined">{isSidebarOpen ? 'menu_open' : 'menu'}</span>
+                <span className="material-symbols-outlined">menu</span>
               </button>
-              <div>
-                <h2 className="text-lg font-black tracking-tight font-[var(--font-plus-jakarta)] leading-none text-[var(--on-surface)] uppercase text-[12px] opacity-40 mb-1">District Overview</h2>
-                <p className="text-xl font-bold text-[var(--on-surface)]">{pageTitle}</p>
+              <div className="min-w-0 flex items-center gap-2.5">
+                <div className="hidden sm:flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary ring-1 ring-primary/15">
+                  <span
+                    className="material-symbols-outlined text-[20px]"
+                    style={{ fontVariationSettings: "'FILL' 1" }}
+                  >
+                    shield
+                  </span>
+                </div>
+                <div className="min-w-0">
+                  <p className="text-[10px] font-black uppercase tracking-[0.14em] text-primary/70">
+                    {page.crumb}
+                  </p>
+                  <h2 className="truncate text-base sm:text-lg font-bold font-headline text-[#0D2D1C] leading-tight">
+                    {page.title}
+                  </h2>
+                </div>
               </div>
             </div>
 
-            <div className="flex items-center gap-3">
-              <div className="hidden sm:flex items-center gap-2 px-4 py-2 rounded-xl bg-[var(--surface-container-low)] border border-[var(--outline-variant)]">
-                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></div>
-                <span className="text-[11px] font-black uppercase tracking-widest opacity-60">System Stable</span>
+            <div className="flex items-center gap-2 shrink-0">
+              <div className="authority-live-pill hidden sm:flex items-center gap-2 rounded-xl px-3 h-10">
+                <span className="relative flex h-2 w-2">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60" />
+                  <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+                </span>
+                <span className="text-[11px] font-black uppercase tracking-wider text-primary/80">
+                  Live ops
+                </span>
               </div>
-              <button 
+              <button
+                type="button"
                 onClick={() => router.push('/admin/notifications')}
-                className="relative w-10 h-10 flex items-center justify-center rounded-xl bg-white border border-[var(--outline-variant)] text-[var(--on-surface-variant)] hover:bg-[var(--surface-container-low)] transition-all"
+                className="authority-icon-btn relative flex h-10 w-10 items-center justify-center rounded-xl"
+                aria-label="Notifications"
               >
                 <span className="material-symbols-outlined text-[20px]">notifications</span>
                 {unreadCount > 0 && (
-                  <span className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-red-500 border-2 border-white"></span>
+                  <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-red-500 ring-2 ring-white" />
                 )}
               </button>
-              <button 
+              <button
+                type="button"
                 onClick={() => router.push('/admin/settings')}
-                className="w-10 h-10 flex items-center justify-center rounded-xl bg-white border border-[var(--outline-variant)] text-[var(--on-surface-variant)] hover:bg-[var(--surface-container-low)] transition-all"
+                className="authority-icon-btn flex h-10 w-10 items-center justify-center rounded-xl"
+                aria-label="Settings"
               >
                 <span className="material-symbols-outlined text-[20px]">settings</span>
               </button>
+              <div
+                className="hidden sm:flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-600 to-emerald-800 text-white font-bold text-sm shadow-md shadow-emerald-900/20 ring-2 ring-white/80"
+                title={adminName}
+              >
+                {adminName[0]?.toUpperCase() || 'A'}
+              </div>
             </div>
           </div>
         </header>
 
-        {/* Page Content */}
-        <main className="flex-1 px-6 py-8 p-4 lg:p-10 relative z-10 w-full max-w-[1600px] mx-auto">
+        <main className="flex-1 w-full max-w-[1600px] mx-auto px-4 py-6 lg:px-8 lg:py-8 relative z-10">
           {children}
         </main>
       </div>
-
-      {/* NO AUX PANELS - Replaced by discrete pages */}
-
     </div>
   );
 }

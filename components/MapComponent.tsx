@@ -45,17 +45,35 @@ export default function MapComponent({
     setIsMounted(true);
   }, []);
 
-  const customIcon = (category: string) => {
-    let color = '#22C55E'; // Default Green
-    if (category === 'Water') color = '#3B82F6';
-    if (category === 'Electricity') color = '#EAB308';
-    if (category === 'Road') color = '#EF4444';
+  // Status-based markers (pending dots, resolved checks, etc.)
+  const customIcon = (status?: string, severity?: string) => {
+    // Lazy import shape logic inline to keep this component standalone
+    const s = (status || 'Submitted').toLowerCase();
+    let color = '#F59E0B';
+    let html = '';
+    if (s.includes('resolv') || s === 'closed' || s === 'done') {
+      color = '#16A34A';
+      html = `<div style="width:20px;height:20px;border-radius:50%;background:${color};border:2px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.25);display:flex;align-items:center;justify-content:center;color:white;font-size:11px;font-weight:900">✓</div>`;
+    } else if (s.includes('reject') || s.includes('denied')) {
+      color = '#DC2626';
+      html = `<div style="width:20px;height:20px;border-radius:50%;background:${color};border:2px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.25);display:flex;align-items:center;justify-content:center;color:white;font-size:11px;font-weight:900">✕</div>`;
+    } else if (s.includes('progress')) {
+      color = '#8B5CF6';
+      html = `<div style="width:14px;height:14px;background:${color};border:2.5px solid white;transform:rotate(45deg);box-shadow:0 2px 8px rgba(0,0,0,0.25)"></div>`;
+    } else if (s.includes('review')) {
+      color = '#3B82F6';
+      html = `<div style="width:16px;height:16px;border-radius:50%;background:white;border:3.5px solid ${color};box-shadow:0 2px 8px rgba(0,0,0,0.25)"></div>`;
+    } else {
+      // Pending / submitted — solid dot
+      color = severity === 'Critical' ? '#EF4444' : '#F59E0B';
+      html = `<div style="width:16px;height:16px;border-radius:50%;background:${color};border:2.5px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.25)"></div>`;
+    }
 
     return L.divIcon({
-      html: `<div style="background-color: ${color}; width: 20px; height: 20px; border-radius: 50%; border: 3px solid white; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);"></div>`,
-      className: 'custom-div-icon',
-      iconSize: [20, 20],
-      iconAnchor: [10, 10],
+      html: `<div style="display:flex;align-items:center;justify-content:center;width:28px;height:28px">${html}</div>`,
+      className: 'civic-status-marker',
+      iconSize: [28, 28],
+      iconAnchor: [14, 14],
     });
   };
 
@@ -91,7 +109,7 @@ export default function MapComponent({
             <Marker 
               key={item.id} 
               position={[lat, lon]} 
-              icon={customIcon(item.category)}
+              icon={customIcon(item.status, item.severity)}
             >
               <Popup className="custom-popup">
                 <div className="w-64 p-0">

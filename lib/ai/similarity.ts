@@ -1,6 +1,7 @@
 export function cosineSimilarity(a: number[], b: number[]): number {
-  if (a.length !== b.length) {
-    throw new Error('Vectors must be of the same length');
+  // Mismatched dims (e.g. legacy rows) — skip rather than crash duplicate checks
+  if (!a?.length || !b?.length || a.length !== b.length) {
+    return 0;
   }
   
   let dotProduct = 0;
