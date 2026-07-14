@@ -58,7 +58,6 @@ export const IssueTable: React.FC<IssueTableProps> = ({
                   className="rounded-lg border-[var(--outline-variant)] text-[var(--primary)] focus:ring-[var(--primary)] w-4 h-4 cursor-pointer"
                 />
               </th>
-              <th className="p-5 text-[10px] font-black text-[var(--on-surface-variant)] uppercase tracking-[0.2em] opacity-60">Reference</th>
               <th className="p-5 text-[10px] font-black text-[var(--on-surface-variant)] uppercase tracking-[0.2em] opacity-60">Issue Profile</th>
               <th className="p-5 text-[10px] font-black text-[var(--on-surface-variant)] uppercase tracking-[0.2em] opacity-60">Geospatial Data</th>
               <th className="p-5 text-[10px] font-black text-[var(--on-surface-variant)] uppercase tracking-[0.2em] opacity-60 text-center">Priority</th>
@@ -77,11 +76,6 @@ export const IssueTable: React.FC<IssueTableProps> = ({
                     className="rounded-lg border-[var(--outline-variant)] text-[var(--primary)] focus:ring-[var(--primary)] w-4 h-4 cursor-pointer"
                   />
                 </td>
-                <td className="p-5">
-                  <span className="font-mono text-[10px] font-bold text-[var(--primary)] bg-[var(--primary)]/5 px-2 py-1 rounded-lg border border-[var(--primary)]/10">
-                    ID-{issue.id.slice(0, 6).toUpperCase()}
-                  </span>
-                </td>
                 <td className="p-5 max-w-[320px]">
                   <div className="flex gap-4">
                     <div className="w-12 h-12 rounded-xl flex-shrink-0 bg-[var(--surface-container-low)] overflow-hidden border border-[var(--outline-variant)] shadow-sm">
@@ -98,7 +92,7 @@ export const IssueTable: React.FC<IssueTableProps> = ({
                       {issue.duplicate_of && (
                         <div className="flex gap-2 items-center mt-1">
                           <span className="text-[10px] bg-amber-100/80 text-amber-700 font-black px-2 py-0.5 rounded border border-amber-200/50 uppercase tracking-widest inline-block">Duplicate</span>
-                          <span className="text-[10px] text-amber-600 font-medium">of ID-{issue.duplicate_of.slice(0, 6).toUpperCase()}</span>
+                          <span className="text-[10px] text-amber-600 font-medium">Linked report</span>
                         </div>
                       )}
                       <div className="flex items-center gap-2 mt-1">

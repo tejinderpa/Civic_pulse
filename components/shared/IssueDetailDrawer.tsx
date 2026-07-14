@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { Issue } from '@/types/issue';
 import { StatusPill } from '@/components/ui/StatusPill';
 import { Badge } from '@/components/ui/Badge';
@@ -102,20 +102,32 @@ export const IssueDetailDrawer: React.FC<IssueDetailDrawerProps> = ({
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
   const [showManual, setShowManual] = useState(false);
+  /** Once AI has run for this issue open, don't re-call (saves tokens). */
+  const aiFetchedForId = useRef<string | null>(null);
+  const openIssueIdRef = useRef<string | null>(null);
 
-  const loadMeta = useCallback(async (issueId: string) => {
+  const applySuggestion = useCallback((suggestion: AiSuggestion) => {
+    setAiSuggestion(suggestion);
+    if (suggestion.severity) setNewSeverity(suggestion.severity);
+    if (suggestion.department) setNewDepartment(suggestion.department);
+    if (typeof suggestion.priority_score === 'number') {
+      setPriorityScore(suggestion.priority_score);
+    }
+    if (suggestion.recommended_task_force_id) {
+      setTaskForceId(suggestion.recommended_task_force_id);
+    }
+    if (suggestion.recommended_status) {
+      setNewStatus(suggestion.recommended_status);
+    }
+  }, []);
+
+  /** Timeline + task forces only — no AI tokens */
+  const loadSupportingMeta = useCallback(async (issueId: string) => {
     setLoadingMeta(true);
-    setAiLoading(true);
-    setAiError(null);
     try {
-      const [tfRes, tlRes, aiRes] = await Promise.all([
+      const [tfRes, tlRes] = await Promise.all([
         fetch('/api/admin/task-forces'),
         fetch(`/api/issues/${issueId}/timeline`),
-        fetch('/api/ai/suggest-assignment', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ issueId }),
-        }),
       ]);
       if (tfRes.ok) {
         const tfs = await tfRes.json();
@@ -127,41 +139,65 @@ export const IssueDetailDrawer: React.FC<IssueDetailDrawerProps> = ({
       } else {
         setHistory([]);
       }
-      if (aiRes.ok) {
-        const suggestion = (await aiRes.json()) as AiSuggestion;
-        setAiSuggestion(suggestion);
-        // Auto-fill fields from AI/heuristic (authority only needs to approve)
-        if (suggestion.severity) setNewSeverity(suggestion.severity);
-        if (suggestion.department) setNewDepartment(suggestion.department);
-        if (typeof suggestion.priority_score === 'number') {
-          setPriorityScore(suggestion.priority_score);
-        }
-        if (suggestion.recommended_task_force_id) {
-          setTaskForceId(suggestion.recommended_task_force_id);
-        }
-        if (suggestion.recommended_status) {
-          setNewStatus(suggestion.recommended_status);
-        }
-      } else {
-        const errBody = await aiRes.json().catch(() => ({}));
-        setAiError(
-          errBody.error ||
-            'Server suggestion failed — filled from local heuristics. Check /api/ai/health for API keys.'
-        );
-        // Still auto-fill from issue + TF list so authority saves time
-        setAiSuggestion(null);
-      }
     } catch (err) {
       console.error('Issue drawer meta load failed:', err);
-      setAiError('Could not load AI suggestion — check /api/ai/health');
     } finally {
       setLoadingMeta(false);
-      setAiLoading(false);
     }
   }, []);
 
+  /** AI suggest once per open (unless forceRefresh) */
+  const loadAiSuggestion = useCallback(
+    async (issueId: string, forceRefresh = false) => {
+      if (!forceRefresh && aiFetchedForId.current === issueId) {
+        return;
+      }
+      setAiLoading(true);
+      setAiError(null);
+      try {
+        const aiRes = await fetch('/api/ai/suggest-assignment', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ issueId }),
+        });
+        if (aiRes.ok) {
+          const suggestion = (await aiRes.json()) as AiSuggestion;
+          applySuggestion(suggestion);
+          aiFetchedForId.current = issueId;
+        } else {
+          const errBody = await aiRes.json().catch(() => ({}));
+          setAiError(
+            errBody.error ||
+              'Suggestion unavailable. Use manual override or try Re-analyze.'
+          );
+          setAiSuggestion(null);
+          // Mark as attempted so we don't hammer the API on every parent re-render
+          aiFetchedForId.current = issueId;
+        }
+      } catch (err) {
+        console.error('AI suggestion failed:', err);
+        setAiError('Could not load AI suggestion');
+        aiFetchedForId.current = issueId;
+      } finally {
+        setAiLoading(false);
+      }
+    },
+    [applySuggestion]
+  );
+
+  // Open drawer: seed form from issue once per issue id; AI only once
   useEffect(() => {
-    if (issue && isOpen) {
+    if (!issue || !isOpen) {
+      if (!isOpen) {
+        openIssueIdRef.current = null;
+      }
+      return;
+    }
+
+    const isNewOpen = openIssueIdRef.current !== issue.id;
+    if (isNewOpen) {
+      openIssueIdRef.current = issue.id;
+      aiFetchedForId.current = null;
       setNewStatus(issue.status);
       setNewDepartment(issue.department || '');
       setNewSeverity(issue.severity || 'Medium');
@@ -176,9 +212,14 @@ export const IssueDetailDrawer: React.FC<IssueDetailDrawerProps> = ({
       setNote('');
       setShowManual(false);
       setAiSuggestion(null);
-      loadMeta(issue.id);
+      setAiError(null);
+      void loadSupportingMeta(issue.id);
+      void loadAiSuggestion(issue.id, false);
     }
-  }, [issue, isOpen, loadMeta]);
+    // Intentionally only react to issue.id + isOpen so cache patches / manual edits
+    // do not re-trigger AI (wastes tokens).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [issue?.id, isOpen]);
 
   // Freeze main page scroll while drawer is open
   useEffect(() => {
@@ -291,7 +332,8 @@ export const IssueDetailDrawer: React.FC<IssueDetailDrawerProps> = ({
       }
 
       onUpdate();
-      await loadMeta(issue.id);
+      // Refresh timeline only — do NOT re-run AI (saves tokens)
+      void loadSupportingMeta(issue.id);
       onClose();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Unknown error';
@@ -303,6 +345,11 @@ export const IssueDetailDrawer: React.FC<IssueDetailDrawerProps> = ({
 
   const handleApproveAi = () => persistAssignment({ aiApproved: true });
   const handleSave = () => persistAssignment({ aiApproved: false });
+  const handleReanalyze = () => {
+    if (!issue) return;
+    aiFetchedForId.current = null;
+    void loadAiSuggestion(issue.id, true);
+  };
 
   return (
     <>
@@ -329,9 +376,6 @@ export const IssueDetailDrawer: React.FC<IssueDetailDrawerProps> = ({
               <StatusPill status={issue.status} />
             </div>
             <h2 className="text-xl font-black text-gray-900 leading-tight">{issue.title}</h2>
-            <p className="text-gray-400 text-xs mt-1 font-mono uppercase">
-              ID: {issue.id.slice(0, 8)}
-            </p>
           </div>
           <button
             type="button"
@@ -494,11 +538,22 @@ export const IssueDetailDrawer: React.FC<IssueDetailDrawerProps> = ({
                   </p>
                 </div>
               </div>
-              {aiSuggestion && (
-                <span className="text-[10px] font-black uppercase tracking-wider px-2 py-1 rounded-lg bg-white border border-emerald-100 text-emerald-800">
-                  {Math.round((aiSuggestion.confidence || 0) * 100)}% conf.
-                </span>
-              )}
+              <div className="flex items-center gap-2 shrink-0">
+                {aiSuggestion && (
+                  <span className="text-[10px] font-black uppercase tracking-wider px-2 py-1 rounded-lg bg-white border border-emerald-100 text-emerald-800">
+                    {Math.round((aiSuggestion.confidence || 0) * 100)}% conf.
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={handleReanalyze}
+                  disabled={aiLoading || isSaving}
+                  title="Only re-run when you want a fresh AI pass (uses tokens)"
+                  className="text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-lg border border-emerald-200 bg-white text-emerald-800 hover:bg-emerald-50 disabled:opacity-40"
+                >
+                  {aiLoading ? '…' : 'Re-analyze'}
+                </button>
+              </div>
             </div>
 
             {aiLoading && (
@@ -565,8 +620,8 @@ export const IssueDetailDrawer: React.FC<IssueDetailDrawerProps> = ({
                   )}
                 </button>
                 <p className="text-[11px] text-center text-gray-500 font-medium">
-                  Confirms severity, department, priority, status &amp; task force. You only check
-                  unit availability.
+                  Confirms severity, department, priority, status &amp; task force. Manual edits
+                  do not re-run AI (saves tokens). Use Re-analyze only if needed.
                 </p>
               </>
             )}
@@ -728,7 +783,7 @@ export const IssueDetailDrawer: React.FC<IssueDetailDrawerProps> = ({
                   <div>
                     <h4 className="text-sm font-bold">Marked as duplicate</h4>
                     <p className="text-xs mt-1 text-orange-700/80">
-                      Linked to ID-{String(issue.duplicate_of).slice(0, 6).toUpperCase()}
+                      This report is linked to another community submission.
                     </p>
                   </div>
                 </div>
