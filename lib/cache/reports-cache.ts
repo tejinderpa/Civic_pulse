@@ -77,7 +77,7 @@ class ReportsCacheStore {
       // Prune terminal reports older than 7 days from session dump to keep cache lean
       const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
       const byId: Record<string, CachedReport> = {};
-      let entries = [...this.byId.values()];
+      let entries = Array.from(this.byId.values());
       // Prefer open reports, then recent
       entries.sort((a, b) => {
         const aOpen = isTerminal(a.status) ? 1 : 0;
@@ -132,7 +132,7 @@ class ReportsCacheStore {
 
   getAll(): CachedReport[] {
     this.hydrate();
-    return [...this.byId.values()].sort(
+    return Array.from(this.byId.values()).sort(
       (a, b) => +new Date(b.created_at) - +new Date(a.created_at)
     );
   }
@@ -175,7 +175,8 @@ class ReportsCacheStore {
         prev.status === row.status &&
         prev.task_force_id === row.task_force_id &&
         prev.department === row.department &&
-        prev.priority_score === row.priority_score &&
+        prev.ai_score === row.ai_score &&
+        prev.upvotes === row.upvotes &&
         prev.title === row.title &&
         prev.severity === row.severity
       ) {
@@ -209,7 +210,7 @@ class ReportsCacheStore {
     this.hydrate();
     const cutoff = Date.now() - keepRecentHours * 3600_000;
     let removed = 0;
-    for (const [id, r] of this.byId) {
+    for (const [id, r] of Array.from(this.byId.entries())) {
       if (isTerminal(r.status) && +new Date(r.created_at) < cutoff) {
         this.byId.delete(id);
         removed++;

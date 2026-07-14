@@ -144,8 +144,8 @@ function CommunityFeedInner() {
       const res = await fetch(`/api/issues/${id}/vote`, { method: 'POST' });
       const body = await res.json().catch(() => ({}));
       if (res.ok && typeof body.upvotes === 'number') {
-        patchLocal(id, { upvotes: body.upvotes});
-        patchReportLocal(id, { upvotes: body.upvotes});
+        patchLocal(id, { upvotes: body.upvotes });
+        patchReportLocal(id, { upvotes: body.upvotes });
       } else if (!res.ok && body.code !== 'ALREADY_VOTED') {
         patchLocal(id, { upvotes: Math.max(0, prev) });
         patchReportLocal(id, { upvotes: Math.max(0, prev) });

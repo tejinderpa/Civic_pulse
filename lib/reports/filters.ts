@@ -143,7 +143,9 @@ export async function fetchReportFilterCounts(
     userId?: string | null;
   }
 ): Promise<{ total: number; open: number; in_progress: number; resolved: number }> {
-  const applyCommon = (query: FilterableQuery) => {
+  // Keep as any so Supabase thenables retain .count after filter chaining
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const applyCommon = (query: any) => {
     let q = query;
     if (opts.mine && opts.userId) q = q.eq('user_id', opts.userId);
     const category = sanitizeCategory(opts.category || '');
@@ -160,7 +162,9 @@ export async function fetchReportFilterCounts(
     return q;
   };
 
-  const head = () =>
+  type CountRow = { count: number | null };
+
+  const head = (): PromiseLike<CountRow> =>
     applyCommon(
       supabase.from('reports').select('id', { count: 'exact', head: true })
     );
@@ -169,13 +173,13 @@ export async function fetchReportFilterCounts(
     head(),
     applyCommon(
       supabase.from('reports').select('id', { count: 'exact', head: true })
-    ).in('status', STATUS_GROUP_VALUES.open),
+    ).in('status', STATUS_GROUP_VALUES.open) as PromiseLike<CountRow>,
     applyCommon(
       supabase.from('reports').select('id', { count: 'exact', head: true })
-    ).in('status', STATUS_GROUP_VALUES.in_progress),
+    ).in('status', STATUS_GROUP_VALUES.in_progress) as PromiseLike<CountRow>,
     applyCommon(
       supabase.from('reports').select('id', { count: 'exact', head: true })
-    ).in('status', STATUS_GROUP_VALUES.resolved),
+    ).in('status', STATUS_GROUP_VALUES.resolved) as PromiseLike<CountRow>,
   ]);
 
   return {

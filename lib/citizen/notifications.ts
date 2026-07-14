@@ -38,7 +38,7 @@ export function loadReadIds(): Set<string> {
 export function saveReadIds(ids: Set<string>) {
   if (typeof window === 'undefined') return;
   try {
-    localStorage.setItem(READ_KEY, JSON.stringify([...ids]));
+    localStorage.setItem(READ_KEY, JSON.stringify(Array.from(ids)));
   } catch {
     /* ignore */
   }

@@ -66,7 +66,7 @@ export function loadAdminReadIds(): Set<string> {
 export function saveAdminReadIds(ids: Set<string>) {
   if (typeof window === 'undefined') return;
   try {
-    localStorage.setItem(READ_KEY, JSON.stringify([...ids]));
+    localStorage.setItem(READ_KEY, JSON.stringify(Array.from(ids)));
     window.dispatchEvent(new Event('civicpulse-admin-notif-read'));
   } catch {
     /* ignore */

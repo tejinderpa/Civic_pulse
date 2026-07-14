@@ -36,8 +36,8 @@ export async function GET() {
 
     // Task force names
     const tfIds = Array.from(
-  new Set(rows.map((r) => r.task_force_id).filter(Boolean) as string[])
-);
+      new Set(rows.map((r) => r.task_force_id).filter(Boolean) as string[])
+    );
     const taskForceNames: Record<string, string> = {};
     if (tfIds.length > 0) {
       const { data: tfs } = await supabase

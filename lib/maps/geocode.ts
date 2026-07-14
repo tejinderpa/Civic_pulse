@@ -30,7 +30,7 @@ export async function searchLocation(query: string): Promise<LocationSuggestion[
 
     const response = await fetch(`${NOMINATIM_BASE_URL}/search?${params}`, {
       headers: DEFAULT_HEADERS,
-      next: { revalidate: 0 },
+      cache: 'no-store',
     });
 
     if (!response.ok) throw new Error(`Nominatim search failed: ${response.status}`);

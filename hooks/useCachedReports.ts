@@ -133,7 +133,7 @@ export function useCachedReports(options: Options = {}) {
     if (sort === 'votes' || sort === 'priority') {
       list = [...list].sort(
         (a, b) =>
-          (b.priority_score || b.ai_score || 0) - (a.priority_score || a.ai_score || 0)
+          (b.upvotes || b.ai_score || 0) - (a.upvotes || a.ai_score || 0)
       );
     } else {
       list = [...list].sort(
