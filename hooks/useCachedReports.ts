@@ -130,7 +130,18 @@ export function useCachedReports(options: Options = {}) {
       );
     }
 
-    if (sort === 'votes' || sort === 'priority') {
+    if (sort === 'priority') {
+      const sevRank = (s?: string | null) =>
+        s === 'Critical' ? 4 : s === 'High' ? 3 : s === 'Low' ? 1 : 2;
+      list = [...list].sort((a, b) => {
+        const sev = sevRank(b.severity) - sevRank(a.severity);
+        if (sev !== 0) return sev;
+        const scoreA = a.priority_score ?? a.ai_score ?? 0;
+        const scoreB = b.priority_score ?? b.ai_score ?? 0;
+        if (scoreB !== scoreA) return scoreB - scoreA;
+        return +new Date(b.created_at) - +new Date(a.created_at);
+      });
+    } else if (sort === 'votes') {
       list = [...list].sort(
         (a, b) =>
           (b.upvotes || b.ai_score || 0) - (a.upvotes || a.ai_score || 0)

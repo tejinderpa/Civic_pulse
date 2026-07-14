@@ -21,6 +21,8 @@ export type IssueCardProps = {
   timeAgo?: string;
   created_at?: string;
   severity?: string;
+  priority_score?: number | null;
+  ai_score?: number | null;
   duplicate_of?: string | null;
   onVote?: (id: string) => void;
   href?: string;
@@ -52,6 +54,9 @@ export const IssueCard: React.FC<IssueCardProps> = ({
   image_url,
   timeAgo,
   created_at,
+  severity,
+  priority_score,
+  ai_score,
   duplicate_of,
   onVote,
   href,
@@ -62,6 +67,8 @@ export const IssueCard: React.FC<IssueCardProps> = ({
   const displayImage = imageUrl || image_url;
   const displayTime =
     timeAgo || (created_at ? new Date(created_at).toLocaleDateString() : '');
+  const displaySeverity = severity || 'Medium';
+  const displayScore = priority_score ?? ai_score;
 
   const body = (
     <div className="group dash-card-hover overflow-hidden flex flex-col w-full h-full !p-0">
@@ -79,8 +86,21 @@ export const IssueCard: React.FC<IssueCardProps> = ({
             <span className="material-symbols-outlined text-5xl">image</span>
           </div>
         )}
-        <div className="absolute top-3 left-3">
+        <div className="absolute top-3 left-3 flex flex-col gap-1.5">
           <Badge variant={categoryVariant(category)}>{category}</Badge>
+          <span
+            className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md border bg-white/95 shadow-sm ${
+              displaySeverity === 'Critical'
+                ? 'text-red-700 border-red-200'
+                : displaySeverity === 'High'
+                  ? 'text-orange-700 border-orange-200'
+                  : displaySeverity === 'Low'
+                    ? 'text-emerald-700 border-emerald-200'
+                    : 'text-amber-700 border-amber-200'
+            }`}
+          >
+            {displaySeverity}
+          </span>
         </div>
         <div className="absolute top-3 right-3">
           <StatusPill status={status} />
@@ -106,7 +126,10 @@ export const IssueCard: React.FC<IssueCardProps> = ({
         </p>
 
         <div className="mt-auto flex items-center justify-between gap-2 pt-3 border-t border-[var(--outline-variant)]">
-          <span className="text-[11px] font-medium text-on-surface-variant">{displayTime}</span>
+          <span className="text-[11px] font-medium text-on-surface-variant">
+            {displayTime}
+            {displayScore != null ? ` · Score ${displayScore}` : ''}
+          </span>
           <div className="flex items-center gap-2">
             {onVote && (
               <button

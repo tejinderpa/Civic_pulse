@@ -1,9 +1,8 @@
 'use client';
 
-import React, { useState } from 'react';
+import React from 'react';
 import { Issue } from '@/types/issue';
-import { StatusPill } from '@/components/ui/StatusPill';
-import { Badge } from '@/components/ui/Badge';
+import { SEVERITY_BADGE_CLASS } from '@/lib/reports/priority';
 
 type IssueTableProps = {
   issues: Issue[];
@@ -62,7 +61,7 @@ export const IssueTable: React.FC<IssueTableProps> = ({
               <th className="p-5 text-[10px] font-black text-[var(--on-surface-variant)] uppercase tracking-[0.2em] opacity-60">Reference</th>
               <th className="p-5 text-[10px] font-black text-[var(--on-surface-variant)] uppercase tracking-[0.2em] opacity-60">Issue Profile</th>
               <th className="p-5 text-[10px] font-black text-[var(--on-surface-variant)] uppercase tracking-[0.2em] opacity-60">Geospatial Data</th>
-              <th className="p-5 text-[10px] font-black text-[var(--on-surface-variant)] uppercase tracking-[0.2em] opacity-60 text-center">AI Score</th>
+              <th className="p-5 text-[10px] font-black text-[var(--on-surface-variant)] uppercase tracking-[0.2em] opacity-60 text-center">Priority</th>
               <th className="p-5 text-[10px] font-black text-[var(--on-surface-variant)] uppercase tracking-[0.2em] opacity-60 text-center">Directive</th>
               <th className="p-5 text-[10px] font-black text-[var(--on-surface-variant)] uppercase tracking-[0.2em] opacity-60 text-right">Actions</th>
             </tr>
@@ -121,13 +120,26 @@ export const IssueTable: React.FC<IssueTableProps> = ({
                    </div>
                 </td>
                 <td className="p-5 text-center">
-                    <div className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-[11px] font-black shadow-sm ${
-                       (issue.ai_score ?? 0) >= 80 ? 'bg-red-50 text-red-600 border border-red-100' :
-                       (issue.ai_score ?? 0) >= 50 ? 'bg-amber-50 text-amber-600 border border-amber-100' :
-                       (issue.ai_score ?? 0) >= 10 ? 'bg-amber-50 text-amber-600 border border-amber-100' :
-                       'bg-emerald-50 text-emerald-600 border border-emerald-100'
-                     }`}>
-                       {issue.ai_score ?? 0}
+                    <div className="flex flex-col items-center gap-1.5">
+                      <span
+                        className={`inline-flex text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md border ${
+                          SEVERITY_BADGE_CLASS[issue.severity || 'Medium'] ||
+                          SEVERITY_BADGE_CLASS.Medium
+                        }`}
+                      >
+                        {issue.severity || 'Medium'}
+                      </span>
+                      <div
+                        className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-[11px] font-black shadow-sm ${
+                          (issue.ai_score ?? issue.priority_score ?? 0) >= 80
+                            ? 'bg-red-50 text-red-600 border border-red-100'
+                            : (issue.ai_score ?? issue.priority_score ?? 0) >= 50
+                              ? 'bg-amber-50 text-amber-600 border border-amber-100'
+                              : 'bg-emerald-50 text-emerald-600 border border-emerald-100'
+                        }`}
+                      >
+                        {issue.ai_score ?? issue.priority_score ?? 0}
+                      </div>
                     </div>
                 </td>
                 <td className="p-5 text-center">

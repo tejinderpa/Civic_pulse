@@ -365,6 +365,22 @@ export const IssueDetailDrawer: React.FC<IssueDetailDrawerProps> = ({
                   {issue.severity || 'Medium'}
                 </Badge>
               </div>
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-1">
+                  Priority score
+                </p>
+                <p className="text-sm font-black text-gray-900 tabular-nums">
+                  {issue.priority_score ?? issue.ai_score ?? 0}/100
+                </p>
+              </div>
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-1">
+                  Department
+                </p>
+                <p className="text-sm font-semibold text-gray-800">
+                  {issue.department || 'Awaiting assignment'}
+                </p>
+              </div>
             </div>
             {assignedTf && (
               <div className="rounded-xl border border-indigo-100 bg-indigo-50/80 p-3 flex items-center gap-3">

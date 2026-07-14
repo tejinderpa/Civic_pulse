@@ -191,6 +191,14 @@ export default function IssueProgressPage({ params }: { params: { id: string } }
   const status = (issue.status as string) || 'Submitted';
   const location = (issue.location as string) || 'Location not set';
   const imageUrl = (issue.image_url as string) || null;
+  const severity = (issue.severity as string) || 'Medium';
+  const department = (issue.department as string) || null;
+  const priorityScore =
+    typeof issue.priority_score === 'number'
+      ? issue.priority_score
+      : typeof issue.ai_score === 'number'
+        ? issue.ai_score
+        : null;
   const lat = typeof issue.latitude === 'number' ? issue.latitude : 31.326;
   const lng = typeof issue.longitude === 'number' ? issue.longitude : 75.576;
   const createdAt = issue.created_at
@@ -202,6 +210,15 @@ export default function IssueProgressPage({ params }: { params: { id: string } }
     : null;
 
   const statusResolved = status.toLowerCase() === 'resolved';
+
+  const severityBadgeClass =
+    severity === 'Critical'
+      ? 'border-red-400 text-red-700 bg-red-50'
+      : severity === 'High'
+        ? 'border-orange-400 text-orange-700 bg-orange-50'
+        : severity === 'Low'
+          ? 'border-emerald-400 text-emerald-700 bg-emerald-50'
+          : 'border-amber-400 text-amber-700 bg-amber-50';
 
   return (
     <div className="min-h-screen bg-[var(--surface,#F3F5F7)]">
@@ -267,6 +284,11 @@ export default function IssueProgressPage({ params }: { params: { id: string } }
                 >
                   {status}
                 </span>
+                <span
+                  className={`px-4 py-1.5 border font-black text-[10px] uppercase tracking-widest rounded-full ${severityBadgeClass}`}
+                >
+                  {severity} priority
+                </span>
                 {createdAt && (
                   <span className="text-xs font-semibold text-outline">Filed {createdAt}</span>
                 )}
@@ -279,6 +301,31 @@ export default function IssueProgressPage({ params }: { params: { id: string } }
               <p className="text-gray-600 text-base md:text-lg leading-relaxed mb-6 max-w-3xl">
                 {description}
               </p>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
+                <div className="rounded-2xl bg-[#F8FAF9] border border-gray-100 p-4">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-outline mb-1">
+                    Priority score
+                  </p>
+                  <p className="text-lg font-black text-[#0D2D1C] tabular-nums">
+                    {priorityScore != null ? `${priorityScore}/100` : '—'}
+                  </p>
+                </div>
+                <div className="rounded-2xl bg-[#F8FAF9] border border-gray-100 p-4">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-outline mb-1">
+                    Severity
+                  </p>
+                  <p className="text-lg font-black text-[#0D2D1C]">{severity}</p>
+                </div>
+                <div className="rounded-2xl bg-[#F8FAF9] border border-gray-100 p-4">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-outline mb-1">
+                    Department
+                  </p>
+                  <p className="text-sm font-bold text-[#0D2D1C] leading-snug">
+                    {department || 'Awaiting assignment'}
+                  </p>
+                </div>
+              </div>
 
               <div className="flex items-start gap-2 text-sm text-on-surface-variant mb-8">
                 <span className="material-symbols-outlined text-primary text-lg shrink-0">

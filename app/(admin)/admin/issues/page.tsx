@@ -7,6 +7,7 @@ import { IssueTable } from '@/components/admin/IssueTable';
 import { TaskForceModal } from '@/components/admin/TaskForceModal';
 import { IssueDetailDrawer } from '@/components/shared/IssueDetailDrawer';
 import { useCachedReports, patchReportLocal } from '@/hooks/useCachedReports';
+import { compareByPriorityDesc } from '@/lib/reports/priority';
 
 export default function AdminIssuesPage() {
   return (
@@ -69,7 +70,7 @@ function AdminIssuesPageInner() {
 
   const filteredIssues = useMemo(() => {
     const q = searchQuery.toLowerCase();
-    return issues.filter((i) => {
+    const filtered = issues.filter((i) => {
       if (duplicateFilter === 'duplicates' && i.duplicate_of == null) return false;
       if (duplicateFilter === 'originals' && i.duplicate_of != null) return false;
       if (!q) return true;
@@ -77,9 +78,13 @@ function AdminIssuesPageInner() {
         (i.title || '').toLowerCase().includes(q) ||
         (i.location || i.address || '').toLowerCase().includes(q) ||
         (i.description || '').toLowerCase().includes(q) ||
-        (i.category || '').toLowerCase().includes(q)
+        (i.category || '').toLowerCase().includes(q) ||
+        (i.severity || '').toLowerCase().includes(q) ||
+        (i.department || '').toLowerCase().includes(q)
       );
     });
+    // High-priority work first so authorities act on Critical/High before Low
+    return [...filtered].sort(compareByPriorityDesc);
   }, [issues, duplicateFilter, searchQuery]);
 
   async function handleExportReport() {
@@ -128,15 +133,7 @@ function AdminIssuesPageInner() {
         ? fromIssues
         : selectedIds.size > 0
           ? issues.filter((i) => selectedIds.has(i.id))
-          : [...openIssues]
-              .sort((a, b) => {
-                const scoreDiff = (b.ai_score || 0) - (a.ai_score || 0);
-                if (scoreDiff !== 0) return scoreDiff;
-                const sevRank = (s: string | undefined) =>
-                  s === 'Critical' ? 4 : s === 'High' ? 3 : s === 'Medium' ? 2 : 1;
-                return sevRank(b.severity) - sevRank(a.severity);
-              })
-              .slice(0, 8);
+          : [...openIssues].sort(compareByPriorityDesc).slice(0, 8);
 
     if (issuesToAssign.length === 0) {
       alert(
@@ -196,7 +193,7 @@ function AdminIssuesPageInner() {
             Issue Management
           </h1>
           <p className="text-sm text-[var(--on-surface-variant)] font-medium mt-1 max-w-xl">
-            Assign task forces, update status, and track progress on citizen reports.
+            High-priority reports surface first. Assign task forces, update status, and track progress.
           </p>
         </div>
         <p className="text-xs font-bold text-[var(--on-surface-variant)]/70 tabular-nums shrink-0">

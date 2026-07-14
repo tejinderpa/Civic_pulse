@@ -28,6 +28,8 @@ export interface Report {
   image_url: string | null;
   status: ReportStatus | string;
   severity: ReportSeverity | string;
+  /** Priority score 0–100 (also aliased as ai_score in UI) */
+  priority_score?: number | null;
   ai_score: number | null;
   department: string | null;
   duplicate_of: string | null;

@@ -26,6 +26,10 @@ type ReportRow = Record<string, unknown> & {
   image_url?: string;
   imageUrl?: string;
   created_at?: string;
+  severity?: string;
+  priority_score?: number;
+  ai_score?: number;
+  department?: string;
 };
 
 export default function MyReportsPage() {
@@ -282,6 +286,9 @@ export default function MyReportsPage() {
                 <span className="dash-chip bg-slate-100 text-slate-700">
                   {selectedIssue.status || 'Draft'}
                 </span>
+                <span className="dash-chip bg-amber-50 text-amber-800">
+                  {selectedIssue.severity || 'Medium'} priority
+                </span>
               </div>
               <h2 className="text-2xl font-bold text-on-surface font-headline mb-3">
                 {selectedIssue.title || selectedIssue.description}
@@ -303,6 +310,20 @@ export default function MyReportsPage() {
                     {selectedIssue.created_at
                       ? new Date(selectedIssue.created_at as string).toLocaleDateString()
                       : '—'}
+                  </p>
+                </div>
+                <div>
+                  <p className="dash-label mb-1">Priority score</p>
+                  <p className="font-semibold text-sm text-on-surface">
+                    {selectedIssue.priority_score ?? selectedIssue.ai_score ?? '—'}
+                    {(selectedIssue.priority_score != null || selectedIssue.ai_score != null) &&
+                      '/100'}
+                  </p>
+                </div>
+                <div>
+                  <p className="dash-label mb-1">Department</p>
+                  <p className="font-semibold text-sm text-on-surface truncate">
+                    {selectedIssue.department || 'Awaiting assignment'}
                   </p>
                 </div>
               </div>
@@ -376,9 +397,14 @@ function IssueRow({
         </div>
         <div className="flex-1 flex flex-col justify-between min-w-0 py-0.5">
           <div>
-            <span className="dash-chip bg-emerald-50 text-emerald-800 !text-[9px]">
-              {issue.category || 'Issue'}
-            </span>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="dash-chip bg-emerald-50 text-emerald-800 !text-[9px]">
+                {issue.category || 'Issue'}
+              </span>
+              <span className="dash-chip bg-amber-50 text-amber-800 !text-[9px]">
+                {issue.severity || 'Medium'}
+              </span>
+            </div>
             <h4 className="text-base font-bold text-on-surface mt-1.5 line-clamp-1">
               {issue.title || issue.description}
             </h4>
@@ -387,11 +413,18 @@ function IssueRow({
               {issue.location}
             </p>
           </div>
-          <div className="flex items-center gap-2 mt-2">
-            <span className="w-1.5 h-1.5 rounded-full bg-primary" />
-            <span className="text-[11px] font-bold text-primary uppercase tracking-wider">
-              {issue.status || 'Pending'}
-            </span>
+          <div className="flex items-center gap-3 mt-2 flex-wrap">
+            <div className="flex items-center gap-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-primary" />
+              <span className="text-[11px] font-bold text-primary uppercase tracking-wider">
+                {issue.status || 'Pending'}
+              </span>
+            </div>
+            {(issue.priority_score != null || issue.ai_score != null) && (
+              <span className="text-[11px] font-bold text-on-surface-variant tabular-nums">
+                Score {issue.priority_score ?? issue.ai_score}
+              </span>
+            )}
           </div>
         </div>
       </button>

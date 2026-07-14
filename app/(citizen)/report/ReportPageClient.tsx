@@ -1,18 +1,29 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { createClient } from '@/utils/supabase/client';
 import Image from 'next/image';
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { useNearbyIssues } from '@/hooks/useMapLogic';
 import { compressImageFile } from '@/lib/images/compress';
+import {
+  buildReportPriorityMeta,
+  SEVERITY_BADGE_CLASS,
+  type SeverityLevel,
+} from '@/lib/reports/priority';
 import { Marker, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 
 const MapWrapper = dynamic(() => import('@/components/shared/MapWrapper'), { ssr: false });
 const IssueMarker = dynamic(() => import('@/components/shared/IssueMarker'), { ssr: false });
+
+const SEVERITY_OPTIONS: { id: SeverityLevel; label: string; hint: string }[] = [
+  { id: 'Low', label: 'Low', hint: 'Minor / routine' },
+  { id: 'Medium', label: 'Medium', hint: 'Needs attention' },
+  { id: 'High', label: 'High', hint: 'Safety risk' },
+  { id: 'Critical', label: 'Critical', hint: 'Urgent hazard' },
+];
 
 const pinIcon = L.divIcon({
   className: 'custom-pin',
@@ -51,9 +62,9 @@ export default function ReportPage() {
     location: '',
     latitude: null as number | null,
     longitude: null as number | null,
-    severity: 'Medium',
+    severity: 'Medium' as SeverityLevel,
     imageUrl: '',
-    imageFile: null as File | null
+    imageFile: null as File | null,
   });
 
   const [searchSuggestions, setSearchSuggestions] = useState<any[]>([]);
@@ -61,6 +72,18 @@ export default function ReportPage() {
   const [duplicates, setDuplicates] = useState<any[]>([]);
   const [duplicateStatus, setDuplicateStatus] = useState<'none' | 'suggest' | 'duplicate'>('none');
   const [isCheckingDuplicates, setIsCheckingDuplicates] = useState(false);
+
+  /** Live priority meta for review step (severity, score, department). */
+  const priorityMeta = useMemo(
+    () =>
+      buildReportPriorityMeta({
+        title: reportData.title,
+        description: reportData.description,
+        category: reportData.category || 'Other',
+        severity: reportData.severity,
+      }),
+    [reportData.title, reportData.description, reportData.category, reportData.severity]
+  );
 
   // Hook for nearby issues
   const { nearbyIssues } = useNearbyIssues(reportData.latitude, reportData.longitude, 500);
@@ -242,16 +265,24 @@ export default function ReportPage() {
         console.error('Silent failure creating embeddings', err);
       }
 
+      const meta = buildReportPriorityMeta({
+        title: reportData.title,
+        description: reportData.description,
+        category: reportData.category || 'Other',
+        severity: reportData.severity,
+      });
+
       const payload: Record<string, unknown> = {
         user_id: currentUser.id,
         title: reportData.title || (reportData.description || '').slice(0, 80) || 'Citizen report',
         description: reportData.description || '',
-        category: reportData.category?.trim() || 'Other',
+        category: meta.category,
         location: reportData.location || null,
         image_url: finalImageUrl || null,
         status: 'Submitted',
-        severity: reportData.severity || 'Medium',
-        priority_score: 0,
+        severity: meta.severity,
+        priority_score: meta.priority_score,
+        department: meta.department,
         latitude: reportData.latitude,
         longitude: reportData.longitude,
       };
@@ -448,6 +479,39 @@ export default function ReportPage() {
                </section>
 
                <section>
+                 <h2 className="text-2xl font-black text-[#0D2D1C] font-headline mb-4">How urgent is it?</h2>
+                 <p className="text-sm text-on-surface-variant/70 mb-6">
+                   Choose severity. We may raise it if the description signals a safety hazard.
+                 </p>
+                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-10">
+                   {SEVERITY_OPTIONS.map((opt) => {
+                     const active = reportData.severity === opt.id;
+                     return (
+                       <button
+                         key={opt.id}
+                         type="button"
+                         onClick={() => setReportData({ ...reportData, severity: opt.id })}
+                         className={`p-4 rounded-2xl border-2 text-left transition-all ${
+                           active
+                             ? 'border-primary bg-primary/5 shadow-lg shadow-primary/10'
+                             : 'border-transparent bg-white shadow-sm hover:border-outline-variant/30'
+                         }`}
+                       >
+                         <span
+                           className={`inline-block text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded-md border mb-2 ${
+                             SEVERITY_BADGE_CLASS[opt.id]
+                           }`}
+                         >
+                           {opt.label}
+                         </span>
+                         <p className="text-xs font-semibold text-on-surface-variant">{opt.hint}</p>
+                       </button>
+                     );
+                   })}
+                 </div>
+               </section>
+
+               <section>
                  <h2 className="text-2xl font-black text-[#0D2D1C] font-headline mb-8">Where is it located?</h2>
                   <div className="bg-white rounded-[40px] border border-outline-variant/10 p-4 shadow-xl shadow-on-surface/[0.02]">
                     <div className="h-[380px] w-full rounded-[32px] relative mb-6 overflow-hidden border border-outline-variant/10">
@@ -581,21 +645,68 @@ export default function ReportPage() {
                         {reportData.imageUrl ? <Image src={reportData.imageUrl} alt="Issue" fill className="object-cover" /> : <div className="w-full h-full flex items-center justify-center text-outline"><span className="material-symbols-outlined text-5xl">image_not_supported</span></div>}
                      </div>
                      <div className="flex-1 py-2">
-                        <div className="inline-block px-3 py-1 bg-primary/10 text-primary text-[10px] font-black uppercase tracking-widest rounded-lg mb-3">Draft Report</div>
+                        <div className="flex flex-wrap items-center gap-2 mb-3">
+                          <div className="inline-block px-3 py-1 bg-primary/10 text-primary text-[10px] font-black uppercase tracking-widest rounded-lg">Draft Report</div>
+                          <span className={`inline-block px-3 py-1 text-[10px] font-black uppercase tracking-widest rounded-lg border ${SEVERITY_BADGE_CLASS[priorityMeta.severity] || SEVERITY_BADGE_CLASS.Medium}`}>
+                            {priorityMeta.severity} priority
+                          </span>
+                        </div>
                         <h3 className="text-3xl font-extrabold text-[#0D2D1C] font-headline mb-2">{reportData.title || 'Untitled Issue'}</h3>
                         <p className="text-on-surface-variant line-clamp-3 font-body mb-6">{reportData.description || 'No description provided.'}</p>
                         
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                            <div className="flex items-center gap-3 p-4 bg-[#F8FAF9] rounded-2xl border border-outline-variant/5">
                               <span className="material-symbols-outlined text-primary">category</span>
-                              <span className="text-sm font-bold text-on-surface">{reportData.category || 'Not specified'}</span>
+                              <div className="min-w-0">
+                                <p className="text-[10px] font-black uppercase tracking-widest text-outline">Category</p>
+                                <span className="text-sm font-bold text-on-surface">{priorityMeta.category}</span>
+                              </div>
                            </div>
                            <div className="flex items-center gap-3 p-4 bg-[#F8FAF9] rounded-2xl border border-outline-variant/5">
                               <span className="material-symbols-outlined text-primary">location_on</span>
-                              <span className="text-sm font-bold text-on-surface truncate">{reportData.location || 'Unknown location'}</span>
+                              <div className="min-w-0">
+                                <p className="text-[10px] font-black uppercase tracking-widest text-outline">Location</p>
+                                <span className="text-sm font-bold text-on-surface truncate block">{reportData.location || 'Unknown location'}</span>
+                              </div>
+                           </div>
+                           <div className="flex items-center gap-3 p-4 bg-[#F8FAF9] rounded-2xl border border-outline-variant/5">
+                              <span className="material-symbols-outlined text-primary">priority_high</span>
+                              <div className="min-w-0">
+                                <p className="text-[10px] font-black uppercase tracking-widest text-outline">Priority score</p>
+                                <span className="text-sm font-bold text-on-surface">{priorityMeta.priority_score}/100 · {priorityMeta.severity}</span>
+                              </div>
+                           </div>
+                           <div className="flex items-center gap-3 p-4 bg-[#F8FAF9] rounded-2xl border border-outline-variant/5">
+                              <span className="material-symbols-outlined text-primary">account_balance</span>
+                              <div className="min-w-0">
+                                <p className="text-[10px] font-black uppercase tracking-widest text-outline">Assigned department</p>
+                                <span className="text-sm font-bold text-on-surface">{priorityMeta.department}</span>
+                              </div>
                            </div>
                         </div>
                      </div>
+                  </div>
+               </section>
+
+               <section className="bg-gradient-to-br from-[#0D2D1C] to-[#1a4a30] p-6 md:p-8 rounded-[32px] text-white shadow-xl">
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-6">
+                    <div className="flex items-center gap-4 flex-1">
+                      <div className="w-14 h-14 rounded-2xl bg-white/10 flex items-center justify-center shrink-0">
+                        <span className="material-symbols-outlined text-3xl">analytics</span>
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-black uppercase tracking-widest text-white/60 mb-1">Report summary for authorities</p>
+                        <p className="text-sm font-medium text-white/90 leading-relaxed">
+                          This report will queue as <strong>{priorityMeta.severity}</strong> (score{' '}
+                          <strong>{priorityMeta.priority_score}</strong>) for{' '}
+                          <strong>{priorityMeta.department}</strong>. Higher priority items are worked first.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="sm:text-right shrink-0">
+                      <p className="text-4xl font-black tabular-nums">{priorityMeta.priority_score}</p>
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-white/50">Priority score</p>
+                    </div>
                   </div>
                </section>
 

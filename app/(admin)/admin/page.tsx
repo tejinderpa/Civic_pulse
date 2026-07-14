@@ -15,6 +15,7 @@ import { TaskForceResult } from '@/types/issue';
 import { DashStat } from '@/components/dashboard/DashStat';
 import { DashCard, DashCardHeader } from '@/components/dashboard/DashCard';
 import { PageHeader } from '@/components/ui/PageHeader';
+import { compareByPriorityDesc, SEVERITY_BADGE_CLASS } from '@/lib/reports/priority';
 
 const AdminMap = dynamic(() => import('../../../components/admin/AdminMap'), {
   ssr: false,
@@ -127,7 +128,7 @@ export default function AdminDashboard() {
   const aiQueue = useMemo(() => {
     return issues
       .filter((i) => i.status !== 'Resolved' && i.status !== 'Rejected')
-      .sort((a, b) => (b.ai_score || 0) - (a.ai_score || 0))
+      .sort(compareByPriorityDesc)
       .slice(0, 5);
   }, [issues]);
 
@@ -215,7 +216,7 @@ export default function AdminDashboard() {
           <DashCard className="flex-1">
             <DashCardHeader
               title="Priority queue"
-              subtitle="Ranked by AI score"
+              subtitle="Critical & high severity first"
               icon="psychology"
               action={
                 aiQueue.length > 0 ? (
@@ -253,11 +254,16 @@ export default function AdminDashboard() {
                       )}
                     </div>
                     <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2 mb-0.5">
+                      <div className="flex items-center gap-2 mb-0.5 flex-wrap">
                         <span className="text-[10px] font-bold uppercase tracking-wide text-primary">
                           {item.category}
                         </span>
-                        <span className="text-[10px] text-on-surface-variant truncate">
+                        <span
+                          className={`text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded border ${
+                            SEVERITY_BADGE_CLASS[item.severity || 'Medium'] ||
+                            SEVERITY_BADGE_CLASS.Medium
+                          }`}
+                        >
                           {item.severity || 'Medium'}
                         </span>
                       </div>
@@ -265,9 +271,12 @@ export default function AdminDashboard() {
                         {item.title}
                       </p>
                       <p className="text-[11px] text-on-surface-variant mt-0.5">
-                        Score {(item as { ai_score?: number; priority_score?: number }).ai_score
-                          ?? (item as { priority_score?: number }).priority_score
-                          ?? '—'} · {item.status}
+                        Score{' '}
+                        {(item as { ai_score?: number; priority_score?: number }).ai_score ??
+                          (item as { priority_score?: number }).priority_score ??
+                          '—'}{' '}
+                        · {item.status}
+                        {item.department ? ` · ${item.department}` : ''}
                       </p>
                     </div>
                     <span className="material-symbols-outlined text-slate-300 group-hover:text-primary transition-colors">
