@@ -5,6 +5,7 @@ import { Issue } from '@/types/issue';
 import { StatusPill } from '@/components/ui/StatusPill';
 import { Badge } from '@/components/ui/Badge';
 import Image from 'next/image';
+import { DEPARTMENTS } from '@/lib/reports/departments';
 
 const STATUS_ORDER = ['Submitted', 'Under Review', 'In Progress', 'Resolved'] as const;
 
@@ -129,7 +130,7 @@ export const IssueDetailDrawer: React.FC<IssueDetailDrawerProps> = ({
       if (aiRes.ok) {
         const suggestion = (await aiRes.json()) as AiSuggestion;
         setAiSuggestion(suggestion);
-        // Auto-fill fields from AI (authority only needs to approve)
+        // Auto-fill fields from AI/heuristic (authority only needs to approve)
         if (suggestion.severity) setNewSeverity(suggestion.severity);
         if (suggestion.department) setNewDepartment(suggestion.department);
         if (typeof suggestion.priority_score === 'number') {
@@ -143,12 +144,16 @@ export const IssueDetailDrawer: React.FC<IssueDetailDrawerProps> = ({
         }
       } else {
         const errBody = await aiRes.json().catch(() => ({}));
-        setAiError(errBody.error || 'AI suggestion unavailable — use manual override');
+        setAiError(
+          errBody.error ||
+            'Server suggestion failed — filled from local heuristics. Check /api/ai/health for API keys.'
+        );
+        // Still auto-fill from issue + TF list so authority saves time
         setAiSuggestion(null);
       }
     } catch (err) {
       console.error('Issue drawer meta load failed:', err);
-      setAiError('Could not load AI suggestion');
+      setAiError('Could not load AI suggestion — check /api/ai/health');
     } finally {
       setLoadingMeta(false);
       setAiLoading(false);
@@ -661,12 +666,15 @@ export const IssueDetailDrawer: React.FC<IssueDetailDrawerProps> = ({
                     className="w-full p-2.5 bg-white border border-gray-200 rounded-lg text-sm font-medium focus:ring-2 focus:ring-emerald-500"
                   >
                     <option value="">Unassigned</option>
-                    <option value="PWD (Roads)">PWD (Roads)</option>
-                    <option value="Municipal Sanitation">Municipal Sanitation</option>
-                    <option value="Electricity Department">Electricity Department</option>
-                    <option value="Water & Sewerage Board">Water & Sewerage Board</option>
-                    <option value="Parks & Environment">Parks & Environment</option>
-                    <option value="General Municipal Services">General Municipal Services</option>
+                    {DEPARTMENTS.map((d) => (
+                      <option key={d} value={d}>
+                        {d}
+                      </option>
+                    ))}
+                    {newDepartment &&
+                      !(DEPARTMENTS as readonly string[]).includes(newDepartment) && (
+                        <option value={newDepartment}>{newDepartment}</option>
+                      )}
                   </select>
                 </div>
 

@@ -25,13 +25,30 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const supabase = createAdminClient();
+    // Prefer service role; fall back to the admin's session client so auto-fill
+    // still works when SUPABASE_SERVICE_ROLE_KEY is missing.
+    let supabase = auth.supabase;
+    try {
+      supabase = createAdminClient();
+    } catch {
+      supabase = auth.supabase;
+    }
 
-    const { data: raw, error } = await supabase
+    let { data: raw, error } = await supabase
       .from('reports')
       .select(REPORT_DETAIL_SELECT)
       .eq('id', issueId)
       .maybeSingle();
+
+    if (error && /upvotes/i.test(error.message || '')) {
+      ({ data: raw, error } = await supabase
+        .from('reports')
+        .select(
+          'id, user_id, title, description, category, location, image_url, status, severity, latitude, longitude, created_at, duplicate_of, department, task_force_id, priority_score'
+        )
+        .eq('id', issueId)
+        .maybeSingle());
+    }
 
     if (error || !raw) {
       return NextResponse.json({ error: 'Issue not found', code: 'NOT_FOUND' }, { status: 404 });
@@ -39,7 +56,7 @@ export async function POST(req: NextRequest) {
 
     const report = normalizeReportRow(raw as Record<string, unknown>);
 
-    const { data: taskForces, error: tfErr } = await supabase
+    let { data: taskForces, error: tfErr } = await supabase
       .from('task_forces')
       .select(
         `
@@ -54,7 +71,13 @@ export async function POST(req: NextRequest) {
       .order('created_at', { ascending: false });
 
     if (tfErr) {
-      console.warn('[suggest-assignment] TF load:', tfErr.message);
+      console.warn('[suggest-assignment] TF nested load failed, simple list:', tfErr.message);
+      const simple = await supabase
+        .from('task_forces')
+        .select('id, name, status')
+        .order('created_at', { ascending: false });
+      taskForces = (simple.data || []).map((t) => ({ ...t, issues: [] }));
+      tfErr = simple.error;
     }
 
     const candidates = (taskForces || []).map((tf: Record<string, unknown>) => {
@@ -92,6 +115,7 @@ export async function POST(req: NextRequest) {
       department: report.department as string | null,
       current_status: report.status as string,
       taskForces: candidates,
+      upvotes: (report as { upvotes?: number }).upvotes ?? 0,
     });
 
     return NextResponse.json({

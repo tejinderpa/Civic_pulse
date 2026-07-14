@@ -3,7 +3,11 @@ export const dynamic = 'force-dynamic';
 import { createClient } from '@/lib/supabase/server';
 import { NextResponse } from 'next/server';
 import { requireUser, isAuthFailure } from '@/lib/auth';
-import { REPORT_LIST_SELECT, normalizeReportRow } from '@/lib/reports/columns';
+import {
+  REPORT_LIST_SELECT,
+  REPORT_LIST_SELECT_NO_UPVOTES,
+  normalizeReportRow,
+} from '@/lib/reports/columns';
 import {
   applyReportFilters,
   fetchReportFilterCounts,
@@ -224,12 +228,26 @@ export async function GET(request: Request) {
     let query = supabase.from('reports').select(REPORT_LIST_SELECT);
     query = applyReportFilters(query, filters);
 
-    const { data, error } = await query;
+    let data: Record<string, unknown>[] | null = null;
+    let error: { message?: string } | null = null;
+    {
+      const first = await query;
+      data = (first.data as Record<string, unknown>[] | null) || null;
+      error = first.error;
+    }
+
+    if (error && /upvotes/i.test(error.message || '')) {
+      let retry = supabase.from('reports').select(REPORT_LIST_SELECT_NO_UPVOTES);
+      retry = applyReportFilters(retry, filters);
+      const second = await retry;
+      data = (second.data as Record<string, unknown>[] | null) || null;
+      error = second.error;
+    }
 
     if (error) {
       console.error('[GET /api/issues]', error);
       // Fallback: simpler filters (eq/in only) if ilike/or fails on schema
-      let fallback = supabase.from('reports').select(REPORT_LIST_SELECT);
+      let fallback = supabase.from('reports').select(REPORT_LIST_SELECT_NO_UPVOTES);
       if (mine && userId) fallback = fallback.eq('user_id', userId);
       if (category && category !== 'All') fallback = fallback.eq('category', category);
       const group = parseStatusGroup(statusGroup);

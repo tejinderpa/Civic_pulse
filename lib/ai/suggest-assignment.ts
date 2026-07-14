@@ -118,6 +118,7 @@ export async function suggestAssignment(input: {
   location?: string | null;
   department?: string | null;
   current_status?: string | null;
+  upvotes?: number | null;
   taskForces: TaskForceCandidate[];
 }): Promise<AssignmentSuggestion> {
   const classification = await classifyReport({
@@ -126,6 +127,7 @@ export async function suggestAssignment(input: {
     category: input.category,
     severity: input.severity,
     location: input.location,
+    upvotes: input.upvotes,
   });
 
   // Prefer existing department if set and sensible

@@ -133,10 +133,11 @@ function CommunityFeedInner() {
   }, []);
 
   async function handleVote(id: string) {
-    if (String(id).startsWith('mock-')) return;
+    if (String(id).startsWith('mock-') || String(id).startsWith('demo-')) return;
 
     const current = reports.find((i) => i.id === id);
     const prev = (current?.upvotes as number) || 0;
+    // Optimistic
     patchLocal(id, { upvotes: prev + 1 });
     patchReportLocal(id, { upvotes: prev + 1 });
 
@@ -144,14 +145,31 @@ function CommunityFeedInner() {
       const res = await fetch(`/api/issues/${id}/vote`, { method: 'POST' });
       const body = await res.json().catch(() => ({}));
       if (res.ok && typeof body.upvotes === 'number') {
-        patchLocal(id, { upvotes: body.upvotes });
-        patchReportLocal(id, { upvotes: body.upvotes });
-      } else if (!res.ok && body.code !== 'ALREADY_VOTED') {
-        patchLocal(id, { upvotes: Math.max(0, prev) });
-        patchReportLocal(id, { upvotes: Math.max(0, prev) });
+        const patch: Record<string, unknown> = {
+          upvotes: body.upvotes,
+          votes_count: body.upvotes,
+        };
+        if (body.severity) patch.severity = body.severity;
+        if (typeof body.priority_score === 'number') {
+          patch.priority_score = body.priority_score;
+          patch.ai_score = body.priority_score;
+        }
+        patchLocal(id, patch);
+        patchReportLocal(id, patch);
+      } else {
+        // Already voted or error — restore server count (never keep optimistic +1)
+        const serverCount =
+          typeof body.upvotes === 'number' ? body.upvotes : Math.max(0, prev);
+        patchLocal(id, { upvotes: serverCount, votes_count: serverCount });
+        patchReportLocal(id, { upvotes: serverCount, votes_count: serverCount });
+        if (body.code === 'ALREADY_VOTED') {
+          // silent — one vote per user
+        } else if (!res.ok) {
+          console.warn('Vote failed:', body.error || res.status);
+        }
       }
     } catch {
-      patchLocal(id, { upvotes: Math.max(0, prev) });
+      patchLocal(id, { upvotes: Math.max(0, prev), votes_count: Math.max(0, prev) });
       patchReportLocal(id, { upvotes: Math.max(0, prev) });
     }
   }

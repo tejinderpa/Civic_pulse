@@ -2,13 +2,17 @@
  * Column set that matches the live Supabase `reports` table.
  * Avoid selecting columns that do not exist (PostgREST 400).
  *
- * Live schema (verified): id, user_id, title, description, category, location,
+ * Live schema: id, user_id, title, description, category, location,
  * image_url, status, severity, created_at, latitude, longitude, priority_score,
- * department, task_force_id, embedding, duplicate_of
+ * department, task_force_id, embedding, duplicate_of, upvotes
  *
- * Optional / may be absent: ai_score, upvotes, sla_deadline, resolved_at
+ * Optional / may be absent: ai_score, sla_deadline, resolved_at
  */
 export const REPORT_LIST_SELECT =
+  'id, user_id, title, description, category, location, image_url, status, severity, latitude, longitude, created_at, duplicate_of, department, task_force_id, priority_score, upvotes';
+
+/** Fallback if `upvotes` column is missing on older DBs */
+export const REPORT_LIST_SELECT_NO_UPVOTES =
   'id, user_id, title, description, category, location, image_url, status, severity, latitude, longitude, created_at, duplicate_of, department, task_force_id, priority_score';
 
 export const REPORT_DETAIL_SELECT = REPORT_LIST_SELECT;

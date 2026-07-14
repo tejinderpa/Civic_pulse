@@ -6,7 +6,10 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { REPORT_LIST_SELECT } from '@/lib/reports/columns';
+import {
+  REPORT_LIST_SELECT,
+  REPORT_LIST_SELECT_NO_UPVOTES,
+} from '@/lib/reports/columns';
 import { isTerminal, reportsCache, SOFT_TTL_MS } from '@/lib/cache/reports-cache';
 
 const OPEN_REFRESH_LIMIT = 120;
@@ -55,11 +58,28 @@ export async function ensureReportsSynced(
 }
 
 export async function fullSync(supabase: SupabaseClient): Promise<void> {
-  const { data, error } = await supabase
-    .from('reports')
-    .select(REPORT_LIST_SELECT)
-    .order('created_at', { ascending: false })
-    .limit(FULL_LIMIT);
+  let data: Record<string, unknown>[] | null = null;
+  let error: { message?: string } | null = null;
+  {
+    const first = await supabase
+      .from('reports')
+      .select(REPORT_LIST_SELECT)
+      .order('created_at', { ascending: false })
+      .limit(FULL_LIMIT);
+    data = (first.data as Record<string, unknown>[] | null) || null;
+    error = first.error;
+  }
+
+  // Older DBs without upvotes column
+  if (error && /upvotes/i.test(error.message || '')) {
+    const second = await supabase
+      .from('reports')
+      .select(REPORT_LIST_SELECT_NO_UPVOTES)
+      .order('created_at', { ascending: false })
+      .limit(FULL_LIMIT);
+    data = (second.data as Record<string, unknown>[] | null) || null;
+    error = second.error;
+  }
 
   if (error) {
     console.warn('[reports-sync] fullSync error:', error.message);

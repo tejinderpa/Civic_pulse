@@ -12,6 +12,12 @@ import {
   type SeverityLevel,
 } from '@/lib/reports/priority';
 import { normalizeCategory } from '@/lib/gemini/classify';
+import { normalizeDepartment } from '@/lib/reports/departments';
+import {
+  severityFromCommunity,
+  inferIssueScope,
+  communityPriorityBonus,
+} from '@/lib/reports/community-severity';
 
 export type ClassifyResult = {
   category: string;
@@ -53,20 +59,44 @@ export async function classifyReport(input: {
   category?: string | null;
   severity?: string | null;
   location?: string | null;
+  upvotes?: number | null;
 }): Promise<ClassifyResult> {
   const heuristic = buildReportPriorityMeta({
     title: input.title,
     description: input.description,
     category: input.category || normalizeCategory(`${input.title} ${input.description}`),
     severity: input.severity,
+    upvotes: input.upvotes,
   });
+
+  const scope = inferIssueScope({
+    title: input.title,
+    description: input.description,
+    location: input.location,
+    category: heuristic.category,
+  });
+
+  const community = severityFromCommunity({
+    baseSeverity: heuristic.severity,
+    upvotes: input.upvotes || 0,
+    scope,
+    title: input.title,
+    description: input.description,
+    location: input.location,
+    category: heuristic.category,
+  });
+
+  const baseScore = Math.min(
+    100,
+    heuristic.priority_score + communityPriorityBonus(input.upvotes || 0, scope)
+  );
 
   const base: ClassifyResult = {
     category: heuristic.category,
-    severity: heuristic.severity,
+    severity: community.severity,
     department: heuristic.department,
-    priority_score: heuristic.priority_score,
-    rationale: `Heuristic severity ${heuristic.severity} for ${heuristic.category}.`,
+    priority_score: baseScore,
+    rationale: `${community.reason} Department: ${heuristic.department}.`,
     confidence: 0.55,
     source: 'heuristic',
   };
@@ -77,16 +107,32 @@ export async function classifyReport(input: {
     category_hint: input.category || null,
     severity_hint: input.severity || null,
     location: input.location || null,
+    upvotes: input.upvotes || 0,
+    issue_scope: scope,
+    note: 'Severity should reflect risk AND local community concern (upvotes). Broader (state) issues need more local support to escalate.',
   });
 
   const llm = await completeJson<LlmClassify>(SYSTEM, user);
   if (!llm) return base;
 
   const category = normalizeCategory(llm.data.category || heuristic.category);
-  const severity = normalizeSeverity(llm.data.severity || heuristic.severity);
-  const department =
+  let severity = normalizeSeverity(llm.data.severity || community.severity);
+  // Community can still escalate above LLM
+  const merged = severityFromCommunity({
+    baseSeverity: severity,
+    upvotes: input.upvotes || 0,
+    scope,
+    title: input.title,
+    description: input.description,
+    location: input.location,
+    category,
+  });
+  severity = merged.severity;
+
+  const department = normalizeDepartment(
     (typeof llm.data.department === 'string' && llm.data.department.trim()) ||
-    resolveDepartment(category);
+      resolveDepartment(category)
+  );
 
   let priority_score =
     typeof llm.data.priority_score === 'number' && Number.isFinite(llm.data.priority_score)
@@ -96,8 +142,12 @@ export async function classifyReport(input: {
           category,
           title: input.title,
           description: input.description,
+          upvotes: input.upvotes,
         });
-  priority_score = Math.max(0, Math.min(100, priority_score));
+  priority_score = Math.max(
+    0,
+    Math.min(100, priority_score + communityPriorityBonus(input.upvotes || 0, scope))
+  );
 
   const confidence =
     typeof llm.data.confidence === 'number'
@@ -111,7 +161,7 @@ export async function classifyReport(input: {
     priority_score,
     rationale:
       (typeof llm.data.rationale === 'string' && llm.data.rationale.trim()) ||
-      base.rationale,
+      merged.reason,
     confidence,
     source: llm.source,
   };

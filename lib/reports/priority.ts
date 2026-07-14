@@ -12,13 +12,13 @@ export const SEVERITY_RANK: Record<string, number> = {
   Low: 1,
 };
 
+import {
+  CATEGORY_DEFAULT_DEPARTMENT,
+  normalizeDepartment,
+} from '@/lib/reports/departments';
+
 export const DEPARTMENT_BY_CATEGORY: Record<string, string> = {
-  Road: 'PWD (Roads)',
-  Garbage: 'Municipal Sanitation',
-  Water: 'Water & Sewerage Board',
-  Electricity: 'Electricity Department',
-  Environment: 'Parks & Environment',
-  Other: 'General Municipal Services',
+  ...CATEGORY_DEFAULT_DEPARTMENT,
 };
 
 /** Base score contribution by severity (0–100 scale). */
@@ -108,7 +108,7 @@ export function resolveDepartment(category: string | null | undefined): string {
   for (const [cat, dept] of Object.entries(DEPARTMENT_BY_CATEGORY)) {
     if (cat.toLowerCase() === lower) return dept;
   }
-  return DEPARTMENT_BY_CATEGORY.Other;
+  return normalizeDepartment(DEPARTMENT_BY_CATEGORY.Other || 'General Municipal Services');
 }
 
 function textBlob(

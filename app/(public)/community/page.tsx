@@ -241,24 +241,48 @@ export default function CommunityPage() {
       return;
     }
 
-    setIssues((prev) =>
-      prev.map((issue) =>
+    const prev =
+      issues.find((i) => i.id === id)?.upvotes ??
+      (issues.find((i) => i.id === id) as { votes_count?: number } | undefined)?.votes_count ??
+      0;
+
+    setIssues((prevList) =>
+      prevList.map((issue) =>
         issue.id === id ? { ...issue, upvotes: (issue.upvotes || 0) + 1 } : issue
       )
     );
 
-    const res = await fetch(`/api/issues/${id}/vote`, { method: 'POST' });
-    const body = await res.json().catch(() => ({}));
-    if (res.ok && typeof body.upvotes === 'number') {
-      setIssues((prev) =>
-        prev.map((issue) => (issue.id === id ? { ...issue, upvotes: body.upvotes } : issue))
-      );
-    } else if (!res.ok && body.code !== 'ALREADY_VOTED') {
-      setIssues((prev) =>
-        prev.map((issue) =>
-          issue.id === id
-            ? { ...issue, upvotes: Math.max(0, (issue.upvotes || 1) - 1) }
-            : issue
+    try {
+      const res = await fetch(`/api/issues/${id}/vote`, { method: 'POST' });
+      const body = await res.json().catch(() => ({}));
+      if (res.ok && typeof body.upvotes === 'number') {
+        setIssues((list) =>
+          list.map((issue) =>
+            issue.id === id
+              ? {
+                  ...issue,
+                  upvotes: body.upvotes,
+                  ...(body.severity ? { severity: body.severity } : {}),
+                  ...(typeof body.priority_score === 'number'
+                    ? { priority_score: body.priority_score, ai_score: body.priority_score }
+                    : {}),
+                }
+              : issue
+          )
+        );
+      } else {
+        const serverCount =
+          typeof body.upvotes === 'number' ? body.upvotes : Math.max(0, Number(prev));
+        setIssues((list) =>
+          list.map((issue) =>
+            issue.id === id ? { ...issue, upvotes: serverCount } : issue
+          )
+        );
+      }
+    } catch {
+      setIssues((list) =>
+        list.map((issue) =>
+          issue.id === id ? { ...issue, upvotes: Math.max(0, Number(prev)) } : issue
         )
       );
     }
