@@ -1,5 +1,6 @@
 import Link from 'next/link';
 
+/** Static auth UI — no client handlers (Server Component safe for Vercel build). */
 export default function VerifyOtpPage() {
   return (
     <div className="bg-surface font-body text-on-surface min-h-screen flex flex-col items-center justify-center p-6 selection:bg-primary-fixed selection:text-on-primary-fixed">
@@ -13,7 +14,7 @@ export default function VerifyOtpPage() {
               <span className="material-symbols-outlined text-4xl" style={{ fontVariationSettings: "'FILL' 1" }}>mail</span>
             </div>
           </div>
-          
+
           <div className="text-center mb-8">
             <h2 className="font-headline text-2xl font-bold text-on-surface mb-2 tracking-tight">Check your email</h2>
             <p className="text-on-surface-variant leading-relaxed">
@@ -21,7 +22,7 @@ export default function VerifyOtpPage() {
             </p>
           </div>
 
-          <form className="space-y-8" onSubmit={(e) => e.preventDefault()}>
+          <form className="space-y-8" action="#">
             <div className="flex justify-between gap-2 md:gap-3">
               <input className="w-12 h-14 md:w-14 md:h-16 text-center text-2xl font-headline font-bold bg-surface-container-low border-transparent rounded-lg focus:ring-4 focus:ring-primary/10 focus:border-primary transition-all text-primary" inputMode="numeric" maxLength={1} pattern="[0-9]*" placeholder="·" type="text" />
               <input className="w-12 h-14 md:w-14 md:h-16 text-center text-2xl font-headline font-bold bg-surface-container-low border-transparent rounded-lg focus:ring-4 focus:ring-primary/10 focus:border-primary transition-all text-primary" inputMode="numeric" maxLength={1} pattern="[0-9]*" placeholder="·" type="text" />
