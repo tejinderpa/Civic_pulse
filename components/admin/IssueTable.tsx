@@ -1,3 +1,5 @@
+'use client';
+
 import React, { useState } from 'react';
 import { Issue } from '@/types/issue';
 import { StatusPill } from '@/components/ui/StatusPill';

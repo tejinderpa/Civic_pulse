@@ -1,3 +1,5 @@
+'use client';
+
 import React from 'react';
 
 export const FilterBottomSheet: React.FC<{ isOpen: boolean; onClose: () => void; children: React.ReactNode }> = ({ isOpen, onClose, children }) => {

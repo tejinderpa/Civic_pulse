@@ -66,6 +66,8 @@ process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY =
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Avoid flaky SSG worker kills on interactive auth/admin pages
+  staticPageGenerationTimeout: 180,
   // Force-embed into client JS (fixes empty createBrowserClient URL/key)
   env: {
     NEXT_PUBLIC_SUPABASE_URL: supabaseUrl,

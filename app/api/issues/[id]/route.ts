@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+
 import { NextResponse } from 'next/server';
 import { REPORT_DETAIL_SELECT, normalizeReportRow } from '@/lib/reports/columns';
 import { requireUser, isAuthFailure, isAdminRole } from '@/lib/auth';

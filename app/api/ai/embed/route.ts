@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+
 import { NextRequest, NextResponse } from 'next/server';
 import { EMBEDDING_DIMENSIONS, generateEmbedding } from '@/lib/ai/gemini';
 import { requireUser, isAuthFailure } from '@/lib/auth';
