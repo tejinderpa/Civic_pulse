@@ -2,11 +2,10 @@ export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
 import { requireUser, isAuthFailure } from '@/lib/auth';
-import { buildReportPriorityMeta } from '@/lib/reports/priority';
+import { classifyReport } from '@/lib/ai/classify-report';
 
 /**
- * Score a draft report for priority / severity / department.
- * Used by the citizen report wizard before final submit.
+ * Score a draft report (same classifier as /api/ai/classify).
  */
 export async function POST(req: NextRequest) {
   const auth = await requireUser();
@@ -16,9 +15,9 @@ export async function POST(req: NextRequest) {
     const body = await req.json().catch(() => ({}));
     const title = typeof body.title === 'string' ? body.title : '';
     const description = typeof body.description === 'string' ? body.description : '';
-    const category = typeof body.category === 'string' ? body.category : 'Other';
+    const category = typeof body.category === 'string' ? body.category : null;
     const severity = typeof body.severity === 'string' ? body.severity : null;
-    const upvotes = typeof body.upvotes === 'number' ? body.upvotes : 0;
+    const location = typeof body.location === 'string' ? body.location : null;
 
     if (!description && !title) {
       return NextResponse.json(
@@ -27,28 +26,23 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const meta = buildReportPriorityMeta({
+    const result = await classifyReport({
       title,
       description,
       category,
       severity,
-      upvotes,
+      location,
     });
 
     return NextResponse.json({
-      severity: meta.severity,
-      priority_score: meta.priority_score,
-      ai_score: meta.priority_score,
-      department: meta.department,
-      category: meta.category,
-      rationale:
-        meta.severity === 'Critical'
-          ? 'Critical keywords or high risk indicators detected — escalate immediately.'
-          : meta.severity === 'High'
-            ? 'Elevated risk signals — prioritize for near-term field response.'
-            : meta.severity === 'Low'
-              ? 'Lower urgency — schedule with routine maintenance.'
-              : 'Standard civic priority — review and assign as capacity allows.',
+      severity: result.severity,
+      priority_score: result.priority_score,
+      ai_score: result.priority_score,
+      department: result.department,
+      category: result.category,
+      rationale: result.rationale,
+      confidence: result.confidence,
+      source: result.source,
     });
   } catch (err) {
     console.error('priority-score error:', err);

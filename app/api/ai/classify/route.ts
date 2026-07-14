@@ -2,11 +2,10 @@ export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
 import { requireUser, isAuthFailure } from '@/lib/auth';
-import { buildReportPriorityMeta } from '@/lib/reports/priority';
-import { normalizeCategory } from '@/lib/gemini/classify';
+import { classifyReport } from '@/lib/ai/classify-report';
 
 /**
- * Classify a draft report: category, severity, department, priority.
+ * Classify a draft or existing report (severity, department, priority, category).
  */
 export async function POST(req: NextRequest) {
   const auth = await requireUser();
@@ -16,25 +15,28 @@ export async function POST(req: NextRequest) {
     const body = await req.json().catch(() => ({}));
     const title = typeof body.title === 'string' ? body.title : '';
     const description = typeof body.description === 'string' ? body.description : '';
-    const categoryHint =
-      typeof body.category === 'string' && body.category.trim()
-        ? body.category
-        : normalizeCategory(`${title} ${description}`);
-    const severityHint = typeof body.severity === 'string' ? body.severity : null;
+    const category = typeof body.category === 'string' ? body.category : null;
+    const severity = typeof body.severity === 'string' ? body.severity : null;
+    const location = typeof body.location === 'string' ? body.location : null;
 
-    const meta = buildReportPriorityMeta({
+    if (!description && !title) {
+      return NextResponse.json(
+        { error: 'title or description required', code: 'BAD_REQUEST' },
+        { status: 400 }
+      );
+    }
+
+    const result = await classifyReport({
       title,
       description,
-      category: categoryHint,
-      severity: severityHint,
+      category,
+      severity,
+      location,
     });
 
     return NextResponse.json({
-      category: meta.category,
-      severity: meta.severity,
-      department: meta.department,
-      priority_score: meta.priority_score,
-      ai_score: meta.priority_score,
+      ...result,
+      ai_score: result.priority_score,
     });
   } catch (err) {
     console.error('classify error:', err);

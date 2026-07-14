@@ -72,9 +72,18 @@ export default function ReportPage() {
   const [duplicates, setDuplicates] = useState<any[]>([]);
   const [duplicateStatus, setDuplicateStatus] = useState<'none' | 'suggest' | 'duplicate'>('none');
   const [isCheckingDuplicates, setIsCheckingDuplicates] = useState(false);
+  const [aiClassifying, setAiClassifying] = useState(false);
+  const [aiMeta, setAiMeta] = useState<{
+    severity: SeverityLevel;
+    priority_score: number;
+    department: string;
+    category: string;
+    rationale?: string;
+    source?: string;
+  } | null>(null);
 
-  /** Live priority meta for review step (severity, score, department). */
-  const priorityMeta = useMemo(
+  /** Live priority meta for review step — AI when available, else heuristic. */
+  const heuristicMeta = useMemo(
     () =>
       buildReportPriorityMeta({
         title: reportData.title,
@@ -84,6 +93,41 @@ export default function ReportPage() {
       }),
     [reportData.title, reportData.description, reportData.category, reportData.severity]
   );
+
+  const priorityMeta = aiMeta || heuristicMeta;
+
+  const runAiClassify = async () => {
+    setAiClassifying(true);
+    try {
+      const res = await fetch('/api/ai/classify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: reportData.title,
+          description: reportData.description,
+          category: reportData.category || 'Other',
+          severity: reportData.severity,
+          location: reportData.location,
+        }),
+      });
+      if (!res.ok) throw new Error('classify failed');
+      const data = await res.json();
+      const sev = (data.severity || heuristicMeta.severity) as SeverityLevel;
+      setAiMeta({
+        severity: sev,
+        priority_score: data.priority_score ?? heuristicMeta.priority_score,
+        department: data.department || heuristicMeta.department,
+        category: data.category || heuristicMeta.category,
+        rationale: data.rationale,
+        source: data.source,
+      });
+      setReportData((prev) => ({ ...prev, severity: sev }));
+    } catch {
+      setAiMeta(null);
+    } finally {
+      setAiClassifying(false);
+    }
+  };
 
   // Hook for nearby issues
   const { nearbyIssues } = useNearbyIssues(reportData.latitude, reportData.longitude, 500);
@@ -265,24 +309,45 @@ export default function ReportPage() {
         console.error('Silent failure creating embeddings', err);
       }
 
-      const meta = buildReportPriorityMeta({
-        title: reportData.title,
-        description: reportData.description,
-        category: reportData.category || 'Other',
-        severity: reportData.severity,
-      });
+      // Prefer server AI classify; fall back to local heuristic
+      let severity = (aiMeta?.severity || heuristicMeta.severity) as SeverityLevel;
+      let category = aiMeta?.category || heuristicMeta.category;
+      let department = aiMeta?.department || heuristicMeta.department;
+      let priority_score = aiMeta?.priority_score ?? heuristicMeta.priority_score;
+      try {
+        const classRes = await fetch('/api/ai/classify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: reportData.title,
+            description: reportData.description,
+            category: reportData.category || 'Other',
+            severity: reportData.severity,
+            location: reportData.location,
+          }),
+        });
+        if (classRes.ok) {
+          const data = await classRes.json();
+          severity = (data.severity || severity) as SeverityLevel;
+          priority_score = data.priority_score ?? priority_score;
+          department = data.department || department;
+          category = data.category || category;
+        }
+      } catch {
+        /* keep meta */
+      }
 
       const payload: Record<string, unknown> = {
         user_id: currentUser.id,
         title: reportData.title || (reportData.description || '').slice(0, 80) || 'Citizen report',
         description: reportData.description || '',
-        category: meta.category,
+        category,
         location: reportData.location || null,
         image_url: finalImageUrl || null,
         status: 'Submitted',
-        severity: meta.severity,
-        priority_score: meta.priority_score,
-        department: meta.department,
+        severity,
+        priority_score,
+        department,
         latitude: reportData.latitude,
         longitude: reportData.longitude,
       };
@@ -631,7 +696,15 @@ export default function ReportPage() {
 
                <div className="pt-10 flex justify-between gap-6">
                  <button onClick={() => setStep(1)} className="px-10 h-16 bg-surface-container-high text-on-surface-variant font-bold rounded-[22px] transition-all">Back</button>
-                 <button onClick={() => setStep(3)} className="px-14 h-16 bg-[#0D2D1C] text-white font-extrabold rounded-[22px] shadow-2xl shadow-[#0D2D1C]/20 transition-all">Review Report</button>
+                 <button
+                   onClick={() => {
+                     setStep(3);
+                     void runAiClassify();
+                   }}
+                   className="px-14 h-16 bg-[#0D2D1C] text-white font-extrabold rounded-[22px] shadow-2xl shadow-[#0D2D1C]/20 transition-all"
+                 >
+                   Review Report
+                 </button>
                </div>
              </div>
            )}
@@ -692,14 +765,24 @@ export default function ReportPage() {
                   <div className="flex flex-col sm:flex-row sm:items-center gap-6">
                     <div className="flex items-center gap-4 flex-1">
                       <div className="w-14 h-14 rounded-2xl bg-white/10 flex items-center justify-center shrink-0">
-                        <span className="material-symbols-outlined text-3xl">analytics</span>
+                        <span className="material-symbols-outlined text-3xl">
+                          {aiClassifying ? 'progress_activity' : 'psychology'}
+                        </span>
                       </div>
                       <div>
-                        <p className="text-[10px] font-black uppercase tracking-widest text-white/60 mb-1">Report summary for authorities</p>
+                        <p className="text-[10px] font-black uppercase tracking-widest text-white/60 mb-1">
+                          {aiClassifying
+                            ? 'AI is scoring this report…'
+                            : `AI severity · ${aiMeta?.source || 'heuristic'}`}
+                        </p>
                         <p className="text-sm font-medium text-white/90 leading-relaxed">
-                          This report will queue as <strong>{priorityMeta.severity}</strong> (score{' '}
-                          <strong>{priorityMeta.priority_score}</strong>) for{' '}
-                          <strong>{priorityMeta.department}</strong>. Higher priority items are worked first.
+                          {aiMeta?.rationale || (
+                            <>
+                              This report will queue as <strong>{priorityMeta.severity}</strong> (score{' '}
+                              <strong>{priorityMeta.priority_score}</strong>) for{' '}
+                              <strong>{priorityMeta.department}</strong>. Higher priority items are worked first.
+                            </>
+                          )}
                         </p>
                       </div>
                     </div>

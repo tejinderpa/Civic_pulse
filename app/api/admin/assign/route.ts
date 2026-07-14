@@ -6,7 +6,10 @@ import { createAdminClient } from '@/lib/supabase/admin';
 
 /**
  * Assign a report to an existing task force and/or update status/department.
- * Body: { issueId, taskForceId?, status?, department?, note? }
+ * Body: {
+ *   issueId, taskForceId?, status?, department?, note?,
+ *   severity?, priority_score?, aiApproved?, aiSource?, aiRationale?
+ * }
  */
 export async function POST(req: Request) {
   const auth = await requireAdmin();
@@ -19,6 +22,16 @@ export async function POST(req: Request) {
     const status = body.status as string | undefined;
     const department = body.department as string | undefined;
     const note = (body.note as string | undefined)?.trim() || '';
+    const severity = body.severity as string | undefined;
+    const priorityScore =
+      typeof body.priority_score === 'number'
+        ? body.priority_score
+        : typeof body.ai_score === 'number'
+          ? body.ai_score
+          : undefined;
+    const aiApproved = Boolean(body.aiApproved);
+    const aiSource = typeof body.aiSource === 'string' ? body.aiSource : null;
+    const aiRationale = typeof body.aiRationale === 'string' ? body.aiRationale.trim() : '';
 
     if (!issueId) {
       return NextResponse.json({ error: 'issueId is required', code: 'BAD_REQUEST' }, { status: 400 });
@@ -29,7 +42,7 @@ export async function POST(req: Request) {
 
     const { data: existing, error: fetchErr } = await supabase
       .from('reports')
-      .select('id, status, department, task_force_id, title')
+      .select('id, status, department, task_force_id, title, severity, priority_score')
       .eq('id', issueId)
       .maybeSingle();
 
@@ -141,6 +154,38 @@ export async function POST(req: Request) {
       });
     }
 
+    if (severity && severity !== (existing.severity || '')) {
+      updates.severity = severity;
+      history.push({
+        issue_id: issueId,
+        action_type: 'severity_update',
+        old_value: existing.severity || null,
+        new_value: severity,
+        user_name: actorName,
+        user_id: auth.user.id,
+      });
+    }
+
+    if (typeof priorityScore === 'number' && Number.isFinite(priorityScore)) {
+      const nextScore = Math.max(0, Math.min(100, Math.round(priorityScore)));
+      if (nextScore !== (existing.priority_score as number | null)) {
+        updates.priority_score = nextScore;
+      }
+    }
+
+    if (aiApproved) {
+      history.push({
+        issue_id: issueId,
+        action_type: 'ai_suggestion_applied',
+        old_value: aiSource,
+        new_value:
+          aiRationale ||
+          `AI assignment approved (${severity || existing.severity || '—'} / ${department || existing.department || '—'})`,
+        user_name: actorName,
+        user_id: auth.user.id,
+      });
+    }
+
     if (Object.keys(updates).length === 0) {
       return NextResponse.json({
         ok: true,
@@ -153,7 +198,7 @@ export async function POST(req: Request) {
       .from('reports')
       .update(updates)
       .eq('id', issueId)
-      .select('id, status, department, task_force_id, title')
+      .select('id, status, department, task_force_id, title, severity, priority_score')
       .single();
 
     if (updateErr) {
