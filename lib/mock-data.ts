@@ -1,130 +1,70 @@
-export const MOCK_ISSUES = [
-  {
-    id: 'mock-1',
-    category: 'Road',
-    status: 'In Progress',
-    title: 'Hazardous pothole expanding on 5th Avenue',
-    description: 'A large pothole has opened up near the intersection. It is causing cars to swerve dangerously into the other lane.',
-    address: '55th Avenue & Main St.',
-    votes_count: 142,
-    image_url: 'https://images.unsplash.com/photo-1515162816999-a0c47dc192f7?auto=format&fit=crop&q=80&w=800',
-    created_at: new Date(Date.now() - 7200000).toISOString(),
-    severity: 'High',
-    ai_score: 94,
-    lat: 30.7333,
-    lng: 76.7794,
-    department: 'PWD (Roads)'
-  },
-  {
-    id: 'mock-2',
-    category: 'Garbage',
-    status: 'Submitted',
-    title: 'Uncollected waste bins on Main & Elm',
-    description: 'The community trash bins haven\'t been cleared for over a week. Smells are starting to attract pests.',
-    address: 'Central Park West',
-    votes_count: 89,
-    image_url: 'https://images.unsplash.com/photo-1532996122724-e3c354a0b15b?auto=format&fit=crop&q=80&w=800',
-    created_at: new Date(Date.now() - 18000000).toISOString(),
-    severity: 'Medium',
-    ai_score: 65,
-    lat: 30.7300,
-    lng: 76.7800,
-    department: 'Municipal Sanitation'
-  },
-  {
-    id: 'mock-3',
-    category: 'Water',
-    status: 'Resolved',
-    title: 'Burst pipe flooding local playground',
-    description: 'Water was gushing out from a broken main. It was flooding the toddler play area.',
-    address: 'Riverside Park',
-    votes_count: 256,
-    image_url: 'https://images.unsplash.com/photo-1542013936693-884638332954?auto=format&fit=crop&q=80&w=800',
-    created_at: new Date(Date.now() - 86400000).toISOString(),
-    severity: 'Critical',
-    ai_score: 99,
-    lat: 30.7400,
-    lng: 76.7900,
-    department: 'Water Supply'
-  },
-  {
-    id: 'mock-4',
-    category: 'Electricity',
-    status: 'In Progress',
-    title: 'Streetlights failing on Oak Street',
-    description: 'The entire block of streetlights is down between 4th and 6th. Very dark at night.',
-    address: 'Oak Street Tech Corridor',
-    votes_count: 112,
-    image_url: 'https://images.unsplash.com/photo-1498084393753-b411b2d26b34?auto=format&fit=crop&q=80&w=800',
-    created_at: new Date(Date.now() - 10800000).toISOString(),
-    severity: 'High',
-    ai_score: 82,
-    lat: 30.7350,
-    lng: 76.7850,
-    department: 'Electricity'
-  },
-  {
-    id: 'mock-5',
-    category: 'Road',
-    status: 'Submitted',
-    title: 'Faded pedestrian crossing at School Zone',
-    description: 'The zebra stripes are almost invisible. Drivers aren\'t slowing down for children.',
-    address: 'Lincoln Elementary Entrance',
-    votes_count: 210,
-    image_url: 'https://images.unsplash.com/photo-1525909002-1b05e0c869d8?auto=format&fit=crop&q=80&w=800',
-    created_at: new Date(Date.now() - 43200000).toISOString(),
-    severity: 'High',
-    ai_score: 88,
-    lat: 30.9010,
-    lng: 75.8573,
-    department: 'PWD (Roads)'
-  },
-  {
-    id: 'mock-6',
-    category: 'Water',
-    status: 'Under Review',
-    title: 'Low water pressure in residential blocks',
-    description: 'Multiple hostels and faculty residences are reporting extremely low water pressure during peak hours.',
-    address: 'NIT Jalandhar, GT Road',
-    lat: 31.3951,
-    lng: 75.5358,
-    votes_count: 45,
-    image_url: 'https://images.unsplash.com/photo-1542013936693-884638332954?auto=format&fit=crop&q=80&w=800',
-    created_at: new Date(Date.now() - 3600000).toISOString(),
-    severity: 'Medium',
-    ai_score: 55,
-    department: 'Water Supply'
-  },
-  {
-    id: 'mock-7',
-    category: 'Road',
-    status: 'In Progress',
-    title: 'Slippery road surface near railway crossing',
-    description: 'Oil spill on the road near Bidhipur crossing. Multiple two-wheelers have slipped today.',
-    address: 'Bidhipur Crossing, Jalandhar',
-    lat: 31.3725,
-    lng: 75.5180,
-    votes_count: 82,
-    image_url: 'https://images.unsplash.com/photo-1515162816999-a0c47dc192f7?auto=format&fit=crop&q=80&w=800',
-    created_at: new Date(Date.now() - 14400000).toISOString(),
-    severity: 'High',
-    ai_score: 85,
-    department: 'PWD (Roads)'
-  },
-  {
-    id: 'mock-8',
-    category: 'Electricity',
-    status: 'Submitted',
-    title: 'Frequent power cuts in Amanatpur area',
-    description: 'The local transformer seems overloaded. We are facing 4-5 power cuts every evening.',
-    address: 'Amanatpur, Jalandhar',
-    lat: 31.3540,
-    lng: 75.5420,
-    votes_count: 67,
-    image_url: 'https://images.unsplash.com/photo-1498084393753-b411b2d26b34?auto=format&fit=crop&q=80&w=800',
-    created_at: new Date(Date.now() - 21600000).toISOString(),
-    severity: 'Medium',
-    ai_score: 60,
-    department: 'Electricity'
-  }
-];
+import {
+  buildPunjabDemoRows,
+  PUNJAB_DEMO_REPORTS,
+  type DemoReportSeed,
+} from '@/lib/seed/punjabDemoReports';
+
+export type MockIssue = {
+  id: string;
+  title: string;
+  description: string;
+  category: string;
+  location: string;
+  address: string;
+  latitude: number;
+  longitude: number;
+  lat: number;
+  lng: number;
+  status: string;
+  severity: string;
+  priority_score: number;
+  ai_score: number;
+  department: string;
+  image_url: string;
+  upvotes: number;
+  votes_count: number;
+  created_at: string;
+  duplicate_of: string | null;
+  task_force_id: null;
+  resolved_at: string | null;
+};
+
+/**
+ * In-app mock reports (Punjab region, Unsplash images).
+ * Used when NEXT_PUBLIC_USE_MOCK_DATA=true or DB is empty in demo mode.
+ */
+export const MOCK_ISSUES: MockIssue[] = buildPunjabDemoRows({ fixedIds: true }).map((row) => {
+  const latitude = Number(row.latitude);
+  const longitude = Number(row.longitude);
+  const priority = Number(row.priority_score) || 0;
+  const upvotes = Number(row.upvotes) || 0;
+  const location = String(row.location || '');
+
+  return {
+    id: String(row.id),
+    title: String(row.title || ''),
+    description: String(row.description || ''),
+    category: String(row.category || 'Other'),
+    location,
+    address: location,
+    latitude,
+    longitude,
+    lat: latitude,
+    lng: longitude,
+    status: String(row.status || 'Submitted'),
+    severity: String(row.severity || 'Medium'),
+    priority_score: priority,
+    ai_score: priority,
+    department: String(row.department || ''),
+    image_url: String(row.image_url || ''),
+    upvotes,
+    votes_count: upvotes,
+    created_at: String(row.created_at || new Date().toISOString()),
+    duplicate_of: (row.duplicate_of as string | null) ?? null,
+    task_force_id: null,
+    resolved_at: (row.resolved_at as string | null) ?? null,
+  };
+});
+
+export { PUNJAB_DEMO_REPORTS };
+export type { DemoReportSeed };

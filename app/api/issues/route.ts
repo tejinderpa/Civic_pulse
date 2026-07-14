@@ -11,6 +11,83 @@ import {
   sanitizeSearch,
   type ReportListFilters,
 } from '@/lib/reports/filters';
+import { useMockData } from '@/lib/mock';
+import { MOCK_ISSUES } from '@/lib/mock-data';
+import { compareByPriorityDesc } from '@/lib/reports/priority';
+
+function filterMockIssues(opts: {
+  statusGroup: string;
+  status: string | null;
+  category: string | null;
+  q: string | null;
+  sort: string;
+  page: number;
+  pageSize: number;
+  mine: boolean;
+}) {
+  let list = MOCK_ISSUES.map((r) => normalizeReportRow(r as Record<string, unknown>));
+
+  // "Mine" is empty for pure mock (no real user ownership)
+  if (opts.mine) list = [];
+
+  const group = parseStatusGroup(opts.statusGroup);
+  if (opts.status && opts.status !== 'All') {
+    list = list.filter((r) => String(r.status) === opts.status);
+  } else if (group === 'open') {
+    list = list.filter((r) =>
+      ['Submitted', 'Pending', 'Under Review'].includes(String(r.status))
+    );
+  } else if (group === 'in_progress') {
+    list = list.filter((r) =>
+      ['Under Review', 'In Progress'].includes(String(r.status))
+    );
+  } else if (group === 'resolved') {
+    list = list.filter((r) =>
+      ['Resolved', 'Closed', 'Done'].includes(String(r.status))
+    );
+  }
+
+  if (opts.category && opts.category !== 'All') {
+    list = list.filter(
+      (r) => String(r.category || '').toLowerCase() === opts.category!.toLowerCase()
+    );
+  }
+
+  if (opts.q) {
+    const q = opts.q.toLowerCase();
+    list = list.filter((r) =>
+      [r.title, r.description, r.location]
+        .map((x) => String(x || '').toLowerCase())
+        .some((s) => s.includes(q))
+    );
+  }
+
+  if (opts.sort === 'votes' || opts.sort === 'priority') {
+    list = [...list].sort(compareByPriorityDesc);
+  } else {
+    list = [...list].sort(
+      (a, b) => +new Date(String(b.created_at)) - +new Date(String(a.created_at))
+    );
+  }
+
+  const total = list.length;
+  const open = list.filter((r) =>
+    ['Submitted', 'Pending', 'Under Review'].includes(String(r.status))
+  ).length;
+  const in_progress = list.filter((r) => String(r.status) === 'In Progress').length;
+  const resolved = list.filter((r) =>
+    ['Resolved', 'Closed', 'Done'].includes(String(r.status))
+  ).length;
+
+  const from = opts.page * opts.pageSize;
+  const pageRows = list.slice(from, from + opts.pageSize);
+
+  return {
+    rows: pageRows,
+    counts: { total, open, in_progress, resolved },
+    hasMore: from + opts.pageSize < total,
+  };
+}
 
 export async function POST(request: Request) {
   const auth = await requireUser();
@@ -213,7 +290,35 @@ export async function GET(request: Request) {
       });
     }
 
-    const rows = ((data as Record<string, unknown>[]) || []).map((r) => normalizeReportRow(r));
+    let rows = ((data as Record<string, unknown>[]) || []).map((r) => normalizeReportRow(r));
+
+    // When DB is empty, serve Punjab demo dataset so citizen + authority analytics work
+    if (rows.length === 0 && useMockData() && !mine) {
+      const mock = filterMockIssues({
+        statusGroup,
+        status,
+        category,
+        q,
+        sort,
+        page,
+        pageSize,
+        mine,
+      });
+      return NextResponse.json({
+        data: mock.rows,
+        page,
+        pageSize,
+        hasMore: mock.hasMore,
+        filters: {
+          statusGroup: parseStatusGroup(statusGroup),
+          category: category || 'All',
+          q,
+          sort,
+        },
+        counts: includeCounts ? mock.counts : undefined,
+        source: 'mock-punjab-demo',
+      });
+    }
 
     let counts:
       | { total: number; open: number; in_progress: number; resolved: number }
@@ -247,6 +352,32 @@ export async function GET(request: Request) {
     });
   } catch (err) {
     console.error('[GET /api/issues] unexpected', err);
+    if (useMockData() && !mine) {
+      const mock = filterMockIssues({
+        statusGroup,
+        status,
+        category,
+        q,
+        sort,
+        page,
+        pageSize,
+        mine,
+      });
+      return NextResponse.json({
+        data: mock.rows,
+        page,
+        pageSize,
+        hasMore: mock.hasMore,
+        filters: {
+          statusGroup: parseStatusGroup(statusGroup),
+          category: category || 'All',
+          q,
+          sort,
+        },
+        counts: includeCounts ? mock.counts : undefined,
+        source: 'mock-punjab-demo',
+      });
+    }
     return NextResponse.json({ error: 'Internal error', code: 'INTERNAL' }, { status: 500 });
   }
 }

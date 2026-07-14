@@ -63,10 +63,23 @@ export async function fullSync(supabase: SupabaseClient): Promise<void> {
 
   if (error) {
     console.warn('[reports-sync] fullSync error:', error.message);
+    // Demo fallback so dashboards still work offline / without DB
+    if (process.env.NEXT_PUBLIC_USE_MOCK_DATA === 'true') {
+      const { MOCK_ISSUES } = await import('@/lib/mock-data');
+      reportsCache.replaceAll(MOCK_ISSUES as unknown as Record<string, unknown>[]);
+      return;
+    }
     throw error;
   }
 
-  reportsCache.replaceAll((data as Record<string, unknown>[]) || []);
+  const rows = (data as Record<string, unknown>[]) || [];
+  if (rows.length === 0 && process.env.NEXT_PUBLIC_USE_MOCK_DATA === 'true') {
+    const { MOCK_ISSUES } = await import('@/lib/mock-data');
+    reportsCache.replaceAll(MOCK_ISSUES as unknown as Record<string, unknown>[]);
+    return;
+  }
+
+  reportsCache.replaceAll(rows);
   reportsCache.pruneTerminal(72);
 }
 

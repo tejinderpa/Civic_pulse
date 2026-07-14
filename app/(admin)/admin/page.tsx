@@ -31,6 +31,7 @@ export default function AdminDashboard() {
     reports,
     loading: cacheLoading,
     isValidating,
+    reload,
   } = useCachedReports({ scope: 'all' });
 
   const issues = useMemo(() => {
@@ -45,6 +46,8 @@ export default function AdminDashboard() {
   const [isTaskForceModalOpen, setIsTaskForceModalOpen] = useState(false);
   const [taskForceIssues, setTaskForceIssues] = useState<Issue[]>([]);
   const [portalReady, setPortalReady] = useState(false);
+  const [seedingDemo, setSeedingDemo] = useState(false);
+  const [seedMessage, setSeedMessage] = useState<string | null>(null);
   const router = useRouter();
 
   useEffect(() => {
@@ -150,6 +153,38 @@ export default function AdminDashboard() {
     });
   };
 
+  const handleSeedDemo = async (force = false) => {
+    setSeedingDemo(true);
+    setSeedMessage(null);
+    try {
+      const res = await fetch('/api/admin/seed-demo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ force }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setSeedMessage(json.error || 'Failed to seed demo data');
+        return;
+      }
+      if (json.reports?.length) {
+        const { reportsCache } = await import('@/lib/cache/reports-cache');
+        reportsCache.upsertMany(json.reports as Record<string, unknown>[]);
+      }
+      await reload();
+      setSeedMessage(
+        json.message ||
+          (json.seeded
+            ? `Loaded ${json.seeded} Punjab demo reports`
+            : 'Demo data ready')
+      );
+    } catch {
+      setSeedMessage('Network error while seeding demo data');
+    } finally {
+      setSeedingDemo(false);
+    }
+  };
+
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       <PageHeader
@@ -158,6 +193,18 @@ export default function AdminDashboard() {
         subtitle="Infrastructure health and citizen pulse. AI co-pilot prioritizes your next actions."
         actions={
           <>
+            <button
+              type="button"
+              onClick={() => handleSeedDemo(false)}
+              disabled={seedingDemo}
+              className="dash-btn-secondary"
+              title="Insert 15 Punjab-region demo reports into the live database"
+            >
+              <span className="material-symbols-outlined text-[18px]">
+                {seedingDemo ? 'progress_activity' : 'database'}
+              </span>
+              {seedingDemo ? 'Seeding…' : 'Load Punjab demo'}
+            </button>
             <button
               type="button"
               onClick={() => router.push('/admin/issues')}
@@ -173,6 +220,21 @@ export default function AdminDashboard() {
           </>
         }
       />
+
+      {seedMessage && (
+        <div className="rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-900 flex items-start gap-2">
+          <span className="material-symbols-outlined text-lg shrink-0">check_circle</span>
+          <span className="flex-1">{seedMessage}</span>
+          <button
+            type="button"
+            className="text-emerald-700/70 hover:text-emerald-900"
+            onClick={() => setSeedMessage(null)}
+            aria-label="Dismiss"
+          >
+            <span className="material-symbols-outlined text-lg">close</span>
+          </button>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         {stats.map((stat) => (
